@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="CounterStrikeSharp.API">
+      <HintPath>lib\CounterStrikeSharp.API.dll</HintPath>
+    </Reference>
+    <Reference Include="MenuManagerApi">
+      <HintPath>lib\MenuManagerApi.dll</HintPath>
+    </Reference>
+    <Reference Include="MenuManagerCore">
+      <HintPath>lib\MenuManagerCore.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions">
+      <HintPath>lib\Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
