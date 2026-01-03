@@ -21,4 +21,14 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Remove="lib\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="classes.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
