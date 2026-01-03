@@ -4,8 +4,10 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Capabilities;
 using CounterStrikeSharp.API.Modules.Menu;
+using CounterStrikeSharp.API.Modules.Commands;
 using MenuManager;         // dla IMenuManager
 using Microsoft.Extensions.Logging;
+using ClassSystem.Configuration;
 
 namespace ClassSystem
 {
@@ -20,11 +22,15 @@ namespace ClassSystem
         private ClassMenu _classMenu = default!;
         private readonly HashSet<ulong> _registered = new();  // “zarejestrowani w tej sesji”
         private readonly PluginCapability<IMenuApi?> _menuCap = new("menu:nfcore");
+        private List<ClassInfo> _classes = new();
 
         public override void Load(bool hotReload)
         {
             // Stwórz obiekty, zainicjuj cache, przygotuj słowniki itd.
             _classMenu = new ClassMenu();
+            _classMenu.SetLogger(Logger);
+            _classes = ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
+            _classMenu.SetClasses(_classes);
 
 
             AddCommand("css_klasa", "Otwiera menu klas", (player, info) =>
@@ -44,6 +50,33 @@ namespace ClassSystem
 
                 _classMenu.ShowButtonClassMenu(player);
 
+            });
+
+            AddCommand("setclass", "Ustawia klasę po ID z czatu", (player, info) =>
+            {
+                if (player == null || !player.IsValid || player.IsBot)
+                    return;
+
+                if (info.ArgCount < 2)
+                {
+                    player.PrintToChat("[ClassSystem] Użycie: !setclass <id>");
+                    return;
+                }
+
+                var classId = info.GetArg(1)?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(classId))
+                {
+                    player.PrintToChat("[ClassSystem] Podaj ID klasy z pliku classes.json.");
+                    return;
+                }
+
+                if (!_classMenu.TryApplyClass(player, classId, out var applied))
+                {
+                    player.PrintToChat("[ClassSystem] Nieznana klasa. Sprawdź plik classes.json.");
+                    return;
+                }
+
+                player.PrintToChat($"[ClassSystem] Ustawiono klasę: {applied.Name} ({applied.Id})");
             });
 
             RegisterEventHandler<EventPlayerSpawn>((ev, info) =>
@@ -90,7 +123,6 @@ namespace ClassSystem
             }
             _classMenu.SetApi(plugin);
             _classMenu.SetLogger(Logger);
-            _classMenu.SetPlugin(this);
         }
 
         private void RegisterPlayer(CCSPlayerController player)
@@ -108,5 +140,9 @@ namespace ClassSystem
             }
         }
 
-    }
+        private List<ClassInfo> LoadClassesFromJson()
+        {
+            // pozostawione dla zgodności/komentarzy – logika przeniesiona do ClassConfigLoader
+            return ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
+        }
 }
