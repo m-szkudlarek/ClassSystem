@@ -2,7 +2,6 @@
   {
     "id": "assault",
     "name": "Szturmowiec",
-    "desc": "Uniwersalny balans pomi�dzy si�� i mobilno�ci�",
     "hp": 100,
     "speed": 1.0,
     "damage": 1.0,
@@ -11,7 +10,6 @@
   {
     "id": "tank",
     "name": "Tank",
-    "desc": "Du�o HP kosztem pr�dko�ci",
     "hp": 140,
     "speed": 0.9,
     "damage": 0.9,
@@ -20,7 +18,6 @@
   {
     "id": "scout",
     "name": "Scout",
-    "desc": "Szybki zwiadowca z lekk� broni�",
     "hp": 90,
     "speed": 1.1,
     "damage": 0.95,
