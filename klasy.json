@@ -1,0 +1,29 @@
+[
+  {
+    "id": "assault",
+    "name": "Szturmowiec",
+    "desc": "Uniwersalny balans pomiêdzy si³¹ i mobilnoœci¹",
+    "hp": 100,
+    "speed": 1.0,
+    "damage": 1.0,
+    "loadout": [ "rifle_ak47", "pistol_glock", "grenade_he" ]
+  },
+  {
+    "id": "tank",
+    "name": "Tank",
+    "desc": "Du¿o HP kosztem prêdkoœci",
+    "hp": 140,
+    "speed": 0.9,
+    "damage": 0.9,
+    "loadout": [ "rifle_m249", "pistol_p250", "grenade_he", "armor_heavy" ]
+  },
+  {
+    "id": "scout",
+    "name": "Scout",
+    "desc": "Szybki zwiadowca z lekk¹ broni¹",
+    "hp": 90,
+    "speed": 1.1,
+    "damage": 0.95,
+    "loadout": [ "rifle_ssg08", "pistol_fiveseven", "smokegrenade" ]
+  }
+]

@@ -10,8 +10,6 @@ public sealed class ClassInfo
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
-    [JsonPropertyName("desc")]
-    public string Desc { get; set; } = string.Empty;
 
     [JsonPropertyName("hp")]
     public int Hp { get; set; } = 100;

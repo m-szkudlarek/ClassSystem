@@ -10,9 +10,11 @@ public sealed class ClassMenu
     private IMenuApi? _api;
     private ILogger? _logger;
 
-    private readonly Dictionary<ulong, string> _selectedClass = new();
+    private readonly Dictionary<ulong, string> _selectedClass = [];
     private readonly Dictionary<string, ClassInfo> _classLookup = new(StringComparer.OrdinalIgnoreCase);
-    private List<ClassInfo> _classes = new();
+    private List<ClassInfo> _classes = [];
+    public IReadOnlyDictionary<ulong, string> GetSelections() => _selectedClass;
+    public bool HasClass(string classId) => _classLookup.ContainsKey(classId);
 
     //***********************************Setters*******************************
     public void SetApi(IMenuApi? menuManager)
@@ -28,9 +30,7 @@ public sealed class ClassMenu
 
     public void SetClasses(IEnumerable<ClassInfo> classes)
     {
-        _classes = classes
-            .Where(cls => !string.IsNullOrWhiteSpace(cls.Id))
-            .ToList();
+        _classes = [.. classes.Where(cls => !string.IsNullOrWhiteSpace(cls.Id))];
 
         _classLookup.Clear();
         foreach (var cls in _classes)
@@ -50,19 +50,23 @@ public sealed class ClassMenu
 
         if (_classes.Count == 0)
         {
-            player.PrintToChat("[ClassSystem] Brak dostępnych klas do wyboru.");
+            player.PrintToChat("[DEBUG] Brak dostępnych klas do wyboru.");
             return;
         }
 
         var menu = _api.GetMenuForcetype("Wybierz klasę", MenuType.ButtonMenu);
+        var index = 0;
+
+
+        // Dodaj opcje klas-tworzenie labela
 
         foreach (var cls in _classes)
         {
-            string classId = cls.Id;
             string className = cls.Name;
-            string classDesc = cls.Desc;
+            index++;
+            
 
-            string label = $"{className} — {classDesc}";
+            string label = $"{index}.{className}";
 
             menu.AddMenuOption(label, (p, option) =>
             {
@@ -102,11 +106,9 @@ public sealed class ClassMenu
         var steamId = player.SteamID;
         _selectedClass[steamId] = info.Id;
 
-        player.PrintToChat($"[ClassSystem] Wybrano klasę: {info.Name}");
+        player.PrintToChat($"Wybrano klasę: {info.Name}");
         _logger?.LogInformation("[DEBUG] Gracz {Player} ({SteamId}) wybrał klasę {ClassId}", player.PlayerName, steamId, info.Id);
     }
 
-    public bool HasClass(string classId) => _classLookup.ContainsKey(classId);
 
-    public IReadOnlyDictionary<ulong, string> GetSelections() => _selectedClass;
 }

@@ -8,11 +8,11 @@ public static class ClassConfigLoader
     public static List<ClassInfo> LoadOrCreate(string moduleDirectory, ILogger logger)
     {
         var defaultClasses = GetDefaultClasses();
-        var configPath = Path.Combine(moduleDirectory, "classes.json");
+        var configPath = Path.Combine(moduleDirectory, "klasy.json");
 
         if (!File.Exists(configPath))
         {
-            logger.LogWarning("[ClassSystem] Plik {Path} nie istnieje. Tworzę z domyślnymi klasami.", configPath);
+            logger.LogInformation("[DEBUG] Plik {path} nie istnieje. Tworzę z domyślnymi klasami.", configPath);
             TryWriteDefaultConfig(configPath, defaultClasses);
             return defaultClasses;
         }
@@ -27,7 +27,7 @@ public static class ClassConfigLoader
 
             if (classes == null || classes.Count == 0)
             {
-                logger.LogWarning("[ClassSystem] Plik {Path} nie zawiera żadnych klas. Używam domyślnych.", configPath);
+                logger.LogInformation("[DEBUG] Plik nie zawiera żadnych klas. Używam domyślnych.");
                 return defaultClasses;
             }
 
@@ -37,17 +37,17 @@ public static class ClassConfigLoader
                 .Select(g => g.First())
                 .ToList();
 
-            logger.LogInformation("[ClassSystem] Załadowano {Count} klas z {Path}.", uniqueClasses.Count, configPath);
+            logger.LogInformation("[DEBUG] Załadowano {Count} klas.", uniqueClasses.Count);
             return uniqueClasses;
         }
         catch (JsonException ex)
         {
-            logger.LogError(ex, "[ClassSystem] Błąd parsowania pliku {Path}. Używam domyślnych klas.", configPath);
+            logger.LogInformation(ex, "[DEBUG] Błąd parsowania pliku {Path}. Używam domyślnych klas.", configPath);
             return defaultClasses;
         }
         catch (IOException ex)
         {
-            logger.LogError(ex, "[ClassSystem] Błąd IO podczas czytania {Path}. Używam domyślnych klas.", configPath);
+            logger.LogInformation(ex, "[DEBUG] Błąd IO podczas czytania {Path}. Używam domyślnych klas.", configPath);
             return defaultClasses;
         }
     }
@@ -71,31 +71,10 @@ public static class ClassConfigLoader
         {
             Id = "assault",
             Name = "Szturmowiec",
-            Desc = "Uniwersalny balans pomiędzy siłą i mobilnością",
             Hp = 100,
             Speed = 1.0f,
             Damage = 1.0f,
             Loadout = ["rifle_ak47", "pistol_glock", "grenade_he"]
         },
-        new ClassInfo
-        {
-            Id = "tank",
-            Name = "Tank",
-            Desc = "Dużo HP kosztem prędkości",
-            Hp = 140,
-            Speed = 0.9f,
-            Damage = 0.9f,
-            Loadout = ["rifle_m249", "pistol_p250", "grenade_he", "armor_heavy"]
-        },
-        new ClassInfo
-        {
-            Id = "scout",
-            Name = "Scout",
-            Desc = "Szybki zwiadowca z lekką bronią",
-            Hp = 90,
-            Speed = 1.1f,
-            Damage = 0.95f,
-            Loadout = ["rifle_ssg08", "pistol_fiveseven", "smokegrenade"]
-        }
     ];
 }
