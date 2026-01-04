@@ -19,7 +19,6 @@ namespace ClassSystem
         public override string ModuleVersion => "0.1.0";
         public override string ModuleAuthor => "kerzixa";
 
-
         private ClassMenu _classMenu = default!;
         private readonly HashSet<ulong> _registered = new();  // “zarejestrowani w tej sesji”
         private readonly PluginCapability<IMenuApi?> _menuCap = new("menu:nfcore");
@@ -32,6 +31,8 @@ namespace ClassSystem
             _classMenu.SetLogger(Logger);
             _classes = ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
             _classMenu.SetClasses(_classes);
+
+            RegisterListener<Listeners.OnPlayerTakeDamagePre>(OnPlayerTakeDamagePre);
 
             RegisterEventHandler<EventPlayerSpawn>((ev, info) =>
             {
@@ -47,6 +48,8 @@ namespace ClassSystem
                         return;
 
                     var steam64 = player.SteamID;
+
+                    _classMenu?.ApplySavedClass(player);
 
                     // GUARD: nie rób rejestracji drugi raz
                     if (_registered.Contains(steam64))
@@ -86,6 +89,31 @@ namespace ClassSystem
             }
             _classMenu.SetApi(plugin);
             _classMenu.SetLogger(Logger);
+        }
+
+        private HookResult OnPlayerTakeDamagePre(CCSPlayerPawn victim, CTakeDamageInfo info)
+        {
+            if (info == null || info.Attacker == null || !info.Attacker.IsValid)
+            {
+                return HookResult.Continue;
+            }
+
+            var attackerEntity = info.Attacker.Get();
+            var attackerPawn = attackerEntity?.As<CCSPlayerPawn>();
+            var attackerController = attackerPawn?.OriginalController?.Value;
+
+            if (attackerController == null || !attackerController.IsValid || _classMenu == null)
+            {
+                return HookResult.Continue;
+            }
+
+            if (!_classMenu.TryGetSelectedClass(attackerController.SteamID, out var classInfo) || classInfo == null)
+            {
+                return HookResult.Continue;
+            }
+
+            info.Damage *= classInfo.Stats.DamageMultiplier;
+            return HookResult.Continue;
         }
 
         private void RegisterPlayer(CCSPlayerController player)
