@@ -10,16 +10,30 @@ public sealed class ClassInfo
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
+    [JsonPropertyName("stats")]
+    public ClassStats Stats { get; set; } = new();
 
-    [JsonPropertyName("hp")]
-    public int Hp { get; set; } = 100;
+    [JsonIgnore]
+    public int Hp
+    {
+        get => Stats.Hp;
+        set => Stats.Hp = value;
+    }
 
-    [JsonPropertyName("speed")]
-    public float Speed { get; set; } = 1.0f;
+    [JsonIgnore]
+    public float Speed
+    {
+        get => Stats.Speed;
+        set => Stats.Speed = value;
+    }
 
-    [JsonPropertyName("damage")]
-    public float Damage { get; set; } = 1.0f;
+    [JsonIgnore]
+    public float DamageMultiplier
+    {
+        get => Stats.DamageMultiplier;
+        set => Stats.DamageMultiplier = value;
+    }
 
     [JsonPropertyName("loadout")]
-    public List<string> Loadout { get; set; } = new();
+    public List<string> Loadout { get; set; } = [];
 }

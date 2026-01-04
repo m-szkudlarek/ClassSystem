@@ -1,10 +1,18 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 
 namespace ClassSystem.Configuration;
 
 public static class ClassConfigLoader
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        NumberHandling = JsonNumberHandling.AllowReadingFromString
+    };
     public static List<ClassInfo> LoadOrCreate(string moduleDirectory, ILogger logger)
     {
         var defaultClasses = GetDefaultClasses();
@@ -20,10 +28,7 @@ public static class ClassConfigLoader
         try
         {
             var json = File.ReadAllText(configPath);
-            var classes = JsonSerializer.Deserialize<List<ClassInfo>>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var classes = DeserializeClasses(json, logger);
 
             if (classes == null || classes.Count == 0)
             {
@@ -40,14 +45,14 @@ public static class ClassConfigLoader
             logger.LogInformation("[DEBUG] Załadowano {Count} klas.", uniqueClasses.Count);
             return uniqueClasses;
         }
-        catch (JsonException ex)
-        {
-            logger.LogInformation(ex, "[DEBUG] Błąd parsowania pliku {Path}. Używam domyślnych klas.", configPath);
-            return defaultClasses;
-        }
         catch (IOException ex)
         {
             logger.LogInformation(ex, "[DEBUG] Błąd IO podczas czytania {Path}. Używam domyślnych klas.", configPath);
+            return defaultClasses;
+        }
+        catch (JsonException ex)
+        {
+            logger.LogInformation(ex, "[DEBUG] Błąd parsowania pliku {Path}. Używam domyślnych klas.", configPath);
             return defaultClasses;
         }
     }
@@ -56,7 +61,10 @@ public static class ClassConfigLoader
     {
         try
         {
-            var json = JsonSerializer.Serialize(defaults, new JsonSerializerOptions { WriteIndented = true });
+            var json = JsonSerializer.Serialize(defaults, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
             File.WriteAllText(configPath, json);
         }
         catch (Exception)
@@ -64,17 +72,47 @@ public static class ClassConfigLoader
             // Ignorujemy – jeśli nie możemy zapisać, plugin dalej zadziała na domyślnych.
         }
     }
+    private static List<ClassInfo>? DeserializeClasses(string json, ILogger logger)
+    {
+        try
+        {
+            var classes = JsonSerializer.Deserialize<List<ClassInfo>>(json, SerializerOptions);
+            if (classes == null)
+            {
+                logger.LogInformation("[DEBUG] Plik klas musi zawierać tablicę obiektów.");
+                return null;
+            }
+
+            classes.ForEach(NormalizeClass);
+
+            return classes;
+        }
+        catch (JsonException)
+        {
+            throw;
+        }
+    }
+
+    private static void NormalizeClass(ClassInfo classInfo)
+    {
+        classInfo.Stats ??= new ClassStats();
+        classInfo.Loadout ??= new List<string>();
+        classInfo.Stats.Normalize();
+    }
 
     private static List<ClassInfo> GetDefaultClasses() =>
     [
         new ClassInfo
         {
-            Id = "assault",
-            Name = "Szturmowiec",
-            Hp = 100,
-            Speed = 1.0f,
-            Damage = 1.0f,
-            Loadout = ["rifle_ak47", "pistol_glock", "grenade_he"]
-        },
+            Id = "rambo",
+            Name = "Rambo",
+            Loadout = ["negev", "scythe"],
+            Stats = new ClassStats
+            {
+                Hp = 130,
+                Speed = 0.80f,
+                DamageMultiplier = 1.1f
+            }
+        }
     ];
 }
