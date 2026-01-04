@@ -1,26 +1,134 @@
+// ==========================================
+// COD MOD – CS2 (Metamod + CSSharp)
+// SEZON 1 – PROSTE KLASY STARTOWE
+// ==========================================
+
 [
+  // ------------------------------------------
+  // KLASA: KOMANDOS – "JOHN RAMBO"
+  // ROLA: Heavy Assault / Close Combat
+  // ------------------------------------------
   {
-    "id": "assault",
-    "name": "Szturmowiec",
-    "hp": 100,
-    "speed": 1.0,
-    "damage": 1.0,
-    "loadout": [ "rifle_ak47", "pistol_glock", "grenade_he" ]
+    "id": "rambo",
+    "name": "Rambo",
+    "role": "Heavy Assault / Close Combat",
+    "loadout": [ "Negev", "Scythe" ],
+    "stats": {
+      "hp": 130,
+      "speed": 0.80,
+      "damageMultiplier": 1.10
+    }
   },
+
+  // ------------------------------------------
+  // KLASA: GUNSLINGER – "JOHN WICK"
+  // ROLA: Precision DPS
+  // ------------------------------------------
   {
-    "id": "tank",
-    "name": "Tank",
-    "hp": 140,
-    "speed": 0.9,
-    "damage": 0.9,
-    "loadout": [ "rifle_m249", "pistol_p250", "grenade_he", "armor_heavy" ]
+    "id": "johnwick",
+    "name": "John Wick",
+    "role": "Precision DPS",
+    "loadout": [ "USP-S", "P90" ],
+    "stats": {
+      "hp": 100,
+      "speed": 1.05,
+      "damageMultiplier": 1.00
+    }
   },
+
+  // ------------------------------------------
+  // KLASA: ASSASSIN – "NEO"
+  // ROLA: Mobility / Dodge
+  // ------------------------------------------
   {
-    "id": "scout",
-    "name": "Scout",
-    "hp": 90,
-    "speed": 1.1,
-    "damage": 0.95,
-    "loadout": [ "rifle_ssg08", "pistol_fiveseven", "smokegrenade" ]
+    "id": "neo",
+    "name": "Neo",
+    "role": "Mobility / Dodge",
+    "loadout": [ "DualBerettas", "Knife" ],
+    "stats": {
+      "hp": 90,
+      "speed": 1.15,
+      "damageMultiplier": 0.95
+    }
+  },
+
+  // ------------------------------------------
+  // KLASA: DEMOLITION – "JOKER"
+  // ROLA: Area Damage
+  // ------------------------------------------
+  {
+    "id": "joker",
+    "name": "Joker",
+    "role": "Area Damage",
+    "loadout": [ "Nova" ],
+    "stats": {
+      "hp": 110,
+      "speed": 1.00,
+      "damageMultiplier": 1.05
+    }
+  },
+
+  // ------------------------------------------
+  // KLASA: TANK – "TERMINATOR"
+  // ROLA: Frontline Tank
+  // ------------------------------------------
+  {
+    "id": "terminator",
+    "name": "Terminator",
+    "role": "Frontline Tank",
+    "loadout": [ "M249", "FiveSeven" ],
+    "stats": {
+      "hp": 200,
+      "speed": 0.85,
+      "damageMultiplier": 0.90
+    }
+  },
+
+  // ------------------------------------------
+  // KLASA: SNIPER – "GHOST"
+  // ROLA: Long Range / Stealth
+  // ------------------------------------------
+  {
+    "id": "ghost",
+    "name": "Ghost",
+    "role": "Long Range / Stealth",
+    "loadout": [ "SSG08", "Glock" ],
+    "stats": {
+      "hp": 90,
+      "speed": 1.05,
+      "damageMultiplier": 1.20
+    }
+  },
+
+  // ------------------------------------------
+  // KLASA: MEDIC – "DESMOND DOSS"
+  // ROLA: Support / Team Sustain
+  // ------------------------------------------
+  {
+    "id": "desmonddoss",
+    "name": "Desmond Doss",
+    "role": "Support / Team Sustain",
+    "loadout": [ "GalilAR" ],
+    "stats": {
+      "hp": 120,
+      "speed": 1.00,
+      "damageMultiplier": 0.95
+    }
+  },
+
+  // ------------------------------------------
+  // KLASA: PREMIUM – "JOHNNY SILVERHAND"
+  // ------------------------------------------
+  {
+    "id": "johnnysilverhand",
+    "name": "Johnny Silverhand",
+    "role": "Premium Gunslinger",
+    "access": "PREMIUM",
+    "loadout": [ "Revolver", "Knife" ],
+    "stats": {
+      "hp": 110,
+      "speed": 1.05,
+      "damageMultiplier": 1.15
+    }
   }
 ]
