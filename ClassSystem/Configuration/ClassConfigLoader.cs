@@ -97,6 +97,7 @@ public static class ClassConfigLoader
     {
         classInfo.Stats ??= new ClassStats();
         classInfo.Loadout ??= new List<string>();
+        classInfo.Skills ??= new List<string>();
         classInfo.Stats.Normalize();
     }
 
@@ -107,6 +108,7 @@ public static class ClassConfigLoader
             Id = "rambo",
             Name = "Rambo",
             Loadout = ["negev", "scythe"],
+            Skills = [],
             Stats = new ClassStats
             {
                 Hp = 130,
