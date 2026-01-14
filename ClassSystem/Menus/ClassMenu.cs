@@ -9,6 +9,8 @@ namespace ClassSystem.Menus;
 
 public sealed class ClassMenu
 {
+    public event Action<CCSPlayerController, ClassInfo>? ClassApplied;
+
     private IMenuApi? _api;
     private ILogger? _logger;
 
@@ -136,6 +138,7 @@ public sealed class ClassMenu
         _selectedClass[steamId] = info.Id;
 
         ApplyClassEffects(player, info, true);
+        ClassApplied?.Invoke(player, info);
     }
 
     private void ApplyClassEffects(CCSPlayerController player, ClassInfo info, bool announce)
@@ -152,6 +155,7 @@ public sealed class ClassMenu
 
         ApplyStats(pawn, info.Stats);
         GiveLoadout(player, info.Loadout);
+        ApplySkills(player, info.Skills, announce);
 
         if (announce)
         {
@@ -165,6 +169,22 @@ public sealed class ClassMenu
         pawn.MaxHealth = stats.Hp;
         pawn.Health = stats.Hp;
         pawn.VelocityModifier = stats.Speed;
+    }
+
+    private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<string> skills, bool announce)
+    {
+        if (skills.Count == 0)
+        {
+            return;
+        }
+
+        if (announce)
+        {
+            var skillsText = string.Join(", ", skills);
+            player.PrintToChat($"Umiejętności klasy: {skillsText}");
+        }
+
+        _logger?.LogInformation("[DEBUG] Zastosowano umiejętności {Skills} dla gracza {Player}", string.Join(", ", skills), player.PlayerName);
     }
 
     private void GiveLoadout(CCSPlayerController player, IReadOnlyCollection<string> loadout)
@@ -232,4 +252,3 @@ public sealed class ClassMenu
         return lowered;
     }
 }
-

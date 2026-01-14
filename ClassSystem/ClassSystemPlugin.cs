@@ -21,8 +21,11 @@ namespace ClassSystem
 
         private ClassMenu _classMenu = default!;
         private readonly HashSet<ulong> _registered = new();  // “zarejestrowani w tej sesji”
+        private readonly HashSet<ulong> _selectedThisRound = new();
         private readonly PluginCapability<IMenuApi?> _menuCap = new("menu:nfcore");
         private List<ClassInfo> _classes = [];
+        private bool _classSelectionOpen;
+        private const float ClassSelectionWindowSeconds = 10f;
 
         public override void Load(bool hotReload)
         {
@@ -31,8 +34,11 @@ namespace ClassSystem
             _classMenu.SetLogger(Logger);
             _classes = ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
             _classMenu.SetClasses(_classes);
+            _classMenu.ClassApplied += OnClassApplied;
 
             RegisterListener<Listeners.OnPlayerTakeDamagePre>(OnPlayerTakeDamagePre);
+
+            RegisterEventHandler<EventRoundStart>(OnRoundStart);
 
             RegisterEventHandler<EventPlayerSpawn>((ev, info) =>
             {
@@ -74,6 +80,12 @@ namespace ClassSystem
                 Logger.LogInformation("[DEBUG] ClassMenuAPI nie udało sie pobrać");
                 return;
             }
+
+            if (!CanSelectClass(player))
+            {
+                return;
+            }
+
             _classMenu.ShowButtonClassMenu(player);
         }
 
@@ -116,6 +128,19 @@ namespace ClassSystem
             return HookResult.Continue;
         }
 
+        private HookResult OnRoundStart(EventRoundStart ev, GameEventInfo info)
+        {
+            _classSelectionOpen = true;
+            _selectedThisRound.Clear();
+
+            AddTimer(ClassSelectionWindowSeconds, () =>
+            {
+                _classSelectionOpen = false;
+            });
+
+            return HookResult.Continue;
+        }
+
         private void RegisterPlayer(CCSPlayerController player)
         {
             ulong steam64 = player.SteamID;
@@ -127,7 +152,10 @@ namespace ClassSystem
 
                 // tutaj możesz od razu pokazywać menu klas
                 if (_classMenu == null) return;
-                _classMenu.ShowButtonClassMenu(player);
+                if (CanSelectClass(player))
+                {
+                    _classMenu.ShowButtonClassMenu(player);
+                }
             }
         }
 
@@ -135,6 +163,28 @@ namespace ClassSystem
         {
             // pozostawione dla zgodności/komentarzy – logika przeniesiona do ClassConfigLoader
             return ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
+        }
+
+        private void OnClassApplied(CCSPlayerController player, ClassInfo info)
+        {
+            _selectedThisRound.Add(player.SteamID);
+        }
+
+        private bool CanSelectClass(CCSPlayerController player)
+        {
+            if (!_classSelectionOpen)
+            {
+                player.PrintToChat("Wybór klasy jest możliwy tylko na początku rundy.");
+                return false;
+            }
+
+            if (_selectedThisRound.Contains(player.SteamID))
+            {
+                player.PrintToChat("Klasa została już wybrana w tej rundzie.");
+                return false;
+            }
+
+            return true;
         }
     }
 }
