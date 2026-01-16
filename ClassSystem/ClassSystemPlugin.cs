@@ -208,7 +208,6 @@ namespace ClassSystem
 
             _timingApplied = true;
 
-
             AddTimer(ClassSelectionWindowSeconds, () =>
             {
                 _classSelectionOpen = false;
@@ -318,9 +317,9 @@ namespace ClassSystem
             {
                 return;
             }
-
             _classMenu.ShowButtonClassMenu(player);
         }
+        
 
         [ConsoleCommand("css_test", "testowanie")]
         public void CommandTest(CCSPlayerController? player, CommandInfo info)

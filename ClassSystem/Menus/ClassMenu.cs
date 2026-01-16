@@ -268,3 +268,4 @@ public sealed class ClassMenu
         return lowered;
     }
 }
+
