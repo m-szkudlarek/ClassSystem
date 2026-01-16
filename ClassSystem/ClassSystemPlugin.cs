@@ -1,13 +1,14 @@
-﻿using ClassSystem.Menus;
+﻿using ClassSystem.Configuration;
+using ClassSystem.Menus;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
+using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Core.Capabilities;
-using CounterStrikeSharp.API.Modules.Menu;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Menu;
 using MenuManager;         // dla IMenuManager
 using Microsoft.Extensions.Logging;
-using ClassSystem.Configuration;
 
 namespace ClassSystem
 {
@@ -18,11 +19,10 @@ namespace ClassSystem
         public override string ModuleVersion => "0.1.0";
         public override string ModuleAuthor => "kerzixa";
 
-
         private ClassMenu _classMenu = default!;
         private readonly HashSet<ulong> _registered = new();  // “zarejestrowani w tej sesji”
         private readonly PluginCapability<IMenuApi?> _menuCap = new("menu:nfcore");
-        private List<ClassInfo> _classes = new();
+        private List<ClassInfo> _classes = [];
 
         public override void Load(bool hotReload)
         {
@@ -32,52 +32,7 @@ namespace ClassSystem
             _classes = ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
             _classMenu.SetClasses(_classes);
 
-
-            AddCommand("css_klasa", "Otwiera menu klas", (player, info) =>
-            {
-                if (player == null)
-                    return;
-
-                if (!player.IsValid || player.IsBot)
-                    return;
-
-                // jeśli API menu nie jest ustawione
-                if (_menuCap.Get() == null)
-                {
-                    Logger.LogInformation("[DEBUG] ClassMenuAPI nie udało sie pobrać");
-                    return;
-                }
-
-                _classMenu.ShowButtonClassMenu(player);
-
-            });
-
-            AddCommand("setclass", "Ustawia klasę po ID z czatu", (player, info) =>
-            {
-                if (player == null || !player.IsValid || player.IsBot)
-                    return;
-
-                if (info.ArgCount < 2)
-                {
-                    player.PrintToChat("[ClassSystem] Użycie: !setclass <id>");
-                    return;
-                }
-
-                var classId = info.GetArg(1)?.Trim() ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(classId))
-                {
-                    player.PrintToChat("[ClassSystem] Podaj ID klasy z pliku classes.json.");
-                    return;
-                }
-
-                if (!_classMenu.TryApplyClass(player, classId, out var applied))
-                {
-                    player.PrintToChat("[ClassSystem] Nieznana klasa. Sprawdź plik classes.json.");
-                    return;
-                }
-
-                player.PrintToChat($"[ClassSystem] Ustawiono klasę: {applied.Name} ({applied.Id})");
-            });
+            RegisterListener<Listeners.OnPlayerTakeDamagePre>(OnPlayerTakeDamagePre);
 
             RegisterEventHandler<EventPlayerSpawn>((ev, info) =>
             {
@@ -88,28 +43,39 @@ namespace ClassSystem
                 // spawn bywa zanim pawn jest gotowy – daj krótki delay
                 AddTimer(0.5f, () =>
                 {
-                    if (player == null || !player.IsValid || player.IsBot)
-                        return;
-
                     // PlayerPawn to CHandle – sprawdzaj IsValid / Value
                     if (!player.PlayerPawn.IsValid || player.PlayerPawn.Value == null)
                         return;
 
                     var steam64 = player.SteamID;
 
+                    _classMenu?.ApplySavedClass(player);
+
                     // GUARD: nie rób rejestracji drugi raz
                     if (_registered.Contains(steam64))
-                        return;                  
+                        return;
 
                     RegisterPlayer(player);
-                    player.PrintToChat($"[DEBUG] Zarejestrowano tylko raz: {player.PlayerName} ({steam64})");
                 });
 
                 return HookResult.Continue;
             });
         }
 
+        [ConsoleCommand("css_klasa", "Otwiera menu klas")]
+        public void CmdOpenClassMenu(CCSPlayerController? player, CommandInfo info)
+        {
 
+            if (player == null || !player.IsValid || player.IsBot)
+                return;
+
+            if (_menuCap.Get() == null)
+            {
+                Logger.LogInformation("[DEBUG] ClassMenuAPI nie udało sie pobrać");
+                return;
+            }
+            _classMenu.ShowButtonClassMenu(player);
+        }
 
         public override void OnAllPluginsLoaded(bool hotReload)
         {
@@ -123,6 +89,31 @@ namespace ClassSystem
             }
             _classMenu.SetApi(plugin);
             _classMenu.SetLogger(Logger);
+        }
+
+        private HookResult OnPlayerTakeDamagePre(CCSPlayerPawn victim, CTakeDamageInfo info)
+        {
+            if (info == null || info.Attacker == null || !info.Attacker.IsValid)
+            {
+                return HookResult.Continue;
+            }
+
+            var attackerEntity = info.Attacker.Get();
+            var attackerPawn = attackerEntity?.As<CCSPlayerPawn>();
+            var attackerController = attackerPawn?.OriginalController?.Value;
+
+            if (attackerController == null || !attackerController.IsValid || _classMenu == null)
+            {
+                return HookResult.Continue;
+            }
+
+            if (!_classMenu.TryGetSelectedClass(attackerController.SteamID, out var classInfo) || classInfo == null)
+            {
+                return HookResult.Continue;
+            }
+
+            info.Damage *= classInfo.Stats.DamageMultiplier;
+            return HookResult.Continue;
         }
 
         private void RegisterPlayer(CCSPlayerController player)
@@ -145,4 +136,5 @@ namespace ClassSystem
             // pozostawione dla zgodności/komentarzy – logika przeniesiona do ClassConfigLoader
             return ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
         }
+    }
 }
