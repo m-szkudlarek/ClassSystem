@@ -6,9 +6,15 @@ using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Core.Capabilities;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Cvars;
+using CounterStrikeSharp.API.Modules.Entities;
 using CounterStrikeSharp.API.Modules.Menu;
+using CounterStrikeSharp.API.Modules.Utils;
 using MenuManager;         // dla IMenuManager
 using Microsoft.Extensions.Logging;
+using System.Linq;
+using System.Numerics;
+using static CounterStrikeSharp.API.Core.Listeners;
 
 namespace ClassSystem
 {
@@ -20,43 +26,278 @@ namespace ClassSystem
         public override string ModuleAuthor => "kerzixa";
 
 
-        private ClassMenu _classMenu = default!;
-        private readonly HashSet<ulong> _registered = new();  // “zarejestrowani w tej sesji”
+        //------------------------Capabilitys------------------------
         private readonly PluginCapability<IMenuApi?> _menuCap = new("menu:nfcore");
-        private List<ClassInfo> _classes = [];
 
+        //------------------------Fields------------------------
+        private ClassMenu _classMenu = default!;
+        private List<ClassInfo> _classes = [];
+        private readonly HashSet<SteamID> _registered = [];  // “zarejestrowani w tej sesji”
+        private readonly HashSet<ulong> _selectedThisRound = [];
+        private bool _classSelectionOpen;
+        private const int FreezeTimeSeconds = 20;
+        private const float ClassSelectionWindowSeconds = FreezeTimeSeconds;
+        private bool _restartAllowed = true;
+        private readonly Dictionary<int, SteamID> _slotToSteamId = [];
+
+        // === Plugin lifecycle ===
         public override void Load(bool hotReload)
         {
-            // Stwórz obiekty, zainicjuj cache, przygotuj słowniki itd.
+            // Inicjalizacja konfiguracji i stanu.
             _classMenu = new ClassMenu();
-            _classMenu.SetLogger(Logger);
             _classes = ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
+            _classMenu.SetLogger(Logger);
             _classMenu.SetClasses(_classes);
+            _classMenu.ClassApplied += OnClassApplied;
 
-            RegisterEventHandler<EventPlayerSpawn>((ev, info) =>
+            // Rejestracja listenerów i eventów.
+            RegisterListener<Listeners.OnMapStart>(OnMapStart);
+            RegisterListener<Listeners.OnClientAuthorized>(OnClientAuthorized);
+            RegisterListener<Listeners.OnClientPutInServer>(OnClientPutInServer);
+            RegisterEventHandler<EventRoundStart>(OnRoundStart);
+            RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
+            RegisterListener<Listeners.OnClientDisconnect>(OnClientDisconnect);
+
+
+            RegisterListener<Listeners.OnPlayerTakeDamagePre>(OnPlayerTakeDamagePre);
+            AddCommandListener("jointeam", OnJoinTeam, HookMode.Pre);
+            
+            
+        }
+
+        public override void OnAllPluginsLoaded(bool hotReload)
+        {
+            // Po wczytaniu pluginów konfigurujemy API menu i wyłączamy rozgrzewkę.
+            Logger.LogInformation("[DEBUG] Próba pobrania api");
+            var plugin = _menuCap.Get();
+
+            if (plugin == null)
             {
-                var player = ev.Userid;
-                if (player == null || !player.IsValid || player.IsBot)
-                    return HookResult.Continue;
+                Logger.LogInformation("[DEBUG] MenuManager nie znaleziono...");
+                return;
+            }
+            _classMenu.SetApi(plugin);
+        }
 
-                // spawn bywa zanim pawn jest gotowy – daj krótki delay
-                AddTimer(0.5f, () =>
-                {
-                    // PlayerPawn to CHandle – sprawdzaj IsValid / Value
-                    if (!player.PlayerPawn.IsValid || player.PlayerPawn.Value == null)
-                        return;
+        public void OnClientAuthorized(int playerSlot, SteamID steamId) {
 
-                    var steam64 = player.SteamID;
+            if (_registered.Add(steamId))
+            {
+                Logger.LogInformation($"[DEBUG]Zarejestrowano gracza: {steamId}");
 
-                    // GUARD: nie rób rejestracji drugi raz
-                    if (_registered.Contains(steam64))
-                        return;
+            }
+        }
 
-                    RegisterPlayer(player);
-                });
+        public void OnClientPutInServer(int playerSlot) {
 
-                return HookResult.Continue;
+            Logger.LogInformation("[DEBUG] Gracz dołączył do serwera");
+            CCSPlayerController? ccsPlayerController = Utilities.GetPlayerFromSlot(playerSlot);
+            if (ccsPlayerController == null || !ccsPlayerController.IsValid || ccsPlayerController.IsBot)
+                return;
+
+            SteamID? steam64 = ccsPlayerController.AuthorizedSteamID;
+            if (steam64 is null)
+                return;
+
+            _slotToSteamId[playerSlot] = steam64;
+
+            if (!_slotToSteamId.TryGetValue(playerSlot, out var steamId))
+                return;
+
+            AddTimer(0.2f, () =>
+            {
+
+                if (ccsPlayerController.Team is CsTeam.CounterTerrorist or CsTeam.Terrorist)
+                    return;
+
+                EnsureBalancedTeam(ccsPlayerController); // Twoja logika
+                RestartIfNeeded();          // tylko 1–2 graczy
             });
+
+            //POWITANIE
+            ccsPlayerController.PrintToChat($"Witaj, {ccsPlayerController.PlayerName}!");
+            ccsPlayerController.PrintToChat($"Wybierz klasę, komend !klasa ");
+
+        }
+
+        public void OnMapStart(string mapName)
+        {
+            // Konfiguracja ustawień serwera po starcie mapy.
+            Logger.LogInformation("[DEBUG] Konfiguracja rozgrzewki");
+            
+        }
+
+
+        private HookResult OnJoinTeam(CCSPlayerController? player, CommandInfo info)
+        {
+            /*Logger.LogInformation("[DEBUG] Gracz próbuje zmienić drużynę.");
+            if (player == null || !player.IsValid || player.IsBot)
+            {
+                return HookResult.Continue;
+            }
+
+            Logger.LogInformation("[DEBUG] Gracz próbuje zmienić drużynę.Za ifem");
+            // Zablokuj ręczny wybór drużyny - wymuszamy balans.
+            EnsureBalancedTeam(player);
+            RestartIfNeeded();
+
+            return HookResult.Handled;*/
+
+            return HookResult.Continue;
+        }
+
+        // === Event handlers ===
+        private HookResult OnPlayerTakeDamagePre(CCSPlayerPawn victim, CTakeDamageInfo info)
+        {
+            if (info == null || info.Attacker == null || !info.Attacker.IsValid)
+            {
+                return HookResult.Continue;
+            }
+
+            var attackerEntity = info.Attacker.Get();
+            var attackerPawn = attackerEntity?.As<CCSPlayerPawn>();
+            var attackerController = attackerPawn?.OriginalController?.Value;
+
+            if (attackerController == null || !attackerController.IsValid || _classMenu == null)
+            {
+                return HookResult.Continue;
+            }
+
+            if (!_classMenu.TryGetSelectedClass(attackerController.SteamID, out var classInfo) || classInfo == null)
+            {
+                return HookResult.Continue;
+            }
+
+            info.Damage *= classInfo.Stats.DamageMultiplier;
+            return HookResult.Continue;
+        }
+
+        private HookResult OnPlayerSpawn(EventPlayerSpawn ev, GameEventInfo info)
+        {
+            Logger.LogInformation("[DEBUG] Gracz odrodził się - OnPlayerSpawn");
+
+            /* var player = ev.Userid;
+             if (player == null || !player.IsValid || player.IsBot)
+                 return HookResult.Continue;
+
+             // spawn bywa zanim pawn jest gotowy – daj krótki delay
+             AddTimer(0.5f, () =>
+             {
+                 // PlayerPawn to CHandle – sprawdzaj IsValid / Value
+                 if (!player.PlayerPawn.IsValid || player.PlayerPawn.Value == null)
+                     return;
+
+                 // Wczytaj zapisaną klasę z poprzednich rund.
+                 _classMenu?.ApplySavedClass(player);
+
+             });*/
+
+            return HookResult.Continue;
+        }
+
+        private HookResult OnRoundStart(EventRoundStart ev, GameEventInfo info)
+        {
+            Logger.LogInformation("[DEBUG] Runda rozpoczęta - OnRoundStart");
+            // Okno wyboru klas tylko na starcie rundy.
+            _classSelectionOpen = true;
+            _selectedThisRound.Clear();
+
+            if (_timingApplied)
+                return HookResult.Continue;
+
+            _timingApplied = true;
+
+
+            AddTimer(ClassSelectionWindowSeconds, () =>
+            {
+                _classSelectionOpen = false;
+            });
+
+            return HookResult.Continue;
+        }
+
+        private void OnClientDisconnect(int playerSlot)
+        {
+            // Sprawdź czy znamy ten slot
+            if (!_slotToSteamId.TryGetValue(playerSlot, out var steamId))
+            {
+                // Slot nie był zarejestrowany (np. bot / reconnect glitch)
+                return;
+            }
+
+            // Usuń mapowanie slot → SteamID
+            _slotToSteamId.Remove(playerSlot);
+            // 🔑 KLUCZOWE: pozwól na restart przy następnym wejściu
+            _restartAllowed = true;
+
+            Logger.LogInformation(
+                $"[DEBUG] Player {steamId} left (slot {playerSlot})"
+            );
+        }
+
+        private void OnClassApplied(CCSPlayerController player, ClassInfo info)
+        {
+            _selectedThisRound.Add(player.SteamID);
+        }
+
+
+
+        // === Balans drużyn / reset ===
+        private void EnsureBalancedTeam(CCSPlayerController player)
+        {
+            var players = Utilities.GetPlayers()
+                .Where(p => p != null && p.IsValid && !p.IsBot && p.SteamID != player.SteamID);
+
+            var ctCount = players.Count(p => p.Team == CsTeam.CounterTerrorist);
+            var ttCount = players.Count(p => p.Team == CsTeam.Terrorist);
+
+            CsTeam desiredTeam= CsTeam.Terrorist;
+
+            if (ttCount > ctCount)
+            {
+                desiredTeam = CsTeam.CounterTerrorist;
+            }
+
+                Logger.LogInformation($"[INFO] Zmieniam druzyne gracza {player.PlayerName} na {desiredTeam}");
+                player.ChangeTeam(desiredTeam);
+        }
+
+        private void RestartIfNeeded()
+        {
+            int count = Utilities.GetPlayers()
+                .Count(p => p.IsValid &&
+                            !p.IsBot &&
+                            (p.Team == CsTeam.CounterTerrorist ||
+                             p.Team == CsTeam.Terrorist));
+
+            if ((count == 1 || count == 2) && _restartAllowed)
+            {
+                _restartAllowed = false;
+
+                Logger.LogInformation(
+                    $"[FLOW] Restarting game for {count} players"
+                );
+
+                Server.ExecuteCommand("mp_restartgame 1");
+            }
+        }
+
+        // === Wybór klas ===
+        private bool CanSelectClass(CCSPlayerController player)
+        {
+            if (!_classSelectionOpen)
+            {
+                player.PrintToChat("Wybór klasy jest możliwy tylko na początku rundy.");
+                return false;
+            }
+
+            if (_selectedThisRound.Contains(player.SteamID))
+            {
+                player.PrintToChat("Klasa została już wybrana w tej rundzie.");
+                return false;
+            }
+
+            return true;
         }
 
         [ConsoleCommand("css_klasa", "Otwiera menu klas")]
@@ -66,47 +307,30 @@ namespace ClassSystem
             if (player == null || !player.IsValid || player.IsBot)
                 return;
 
-            if (_menuCap.Get() == null)
+            if (_classMenu.GetApi() == null)
             {
                 Logger.LogInformation("[DEBUG] ClassMenuAPI nie udało sie pobrać");
                 return;
             }
+
+            if (!CanSelectClass(player))
+            {
+                return;
+            }
+
             _classMenu.ShowButtonClassMenu(player);
         }
 
-        public override void OnAllPluginsLoaded(bool hotReload)
+        [ConsoleCommand("css_test", "testowanie")]
+        public void CommandTest(CCSPlayerController? player, CommandInfo info)
         {
-            Logger.LogInformation("[DEBUG] Próba pobrania api");
-            var plugin = _menuCap.Get();
 
-            if (plugin == null)
-            {
-                Logger.LogInformation("[DEBUG] MenuManager Core not found...");
+            if (player == null || !player.IsValid || player.IsBot)
                 return;
-            }
-            _classMenu.SetApi(plugin);
-            _classMenu.SetLogger(Logger);
-        }
+            Server.ExecuteCommand("mp_warmuptime 0");
+            Server.ExecuteCommand("mp_warmup_end");
+            Server.ExecuteCommand($"mp_freezetime {FreezeTimeSeconds}");
 
-        private void RegisterPlayer(CCSPlayerController player)
-        {
-            ulong steam64 = player.SteamID;
-            // Use Add() directly and check its return value instead of Contains() + Add()
-            if (_registered.Add(steam64))
-            {
-                player.PrintToChat($"Witaj, {player.PlayerName}!");
-                Logger.LogInformation($"[DEBUG]Zarejestrowano gracza: {steam64} ({player.PlayerName})");
-
-                // tutaj możesz od razu pokazywać menu klas
-                if (_classMenu == null) return;
-                _classMenu.ShowButtonClassMenu(player);
-            }
-        }
-
-        private List<ClassInfo> LoadClassesFromJson()
-        {
-            // pozostawione dla zgodności/komentarzy – logika przeniesiona do ClassConfigLoader
-            return ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
         }
     }
 }
