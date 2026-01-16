@@ -39,6 +39,7 @@ namespace ClassSystem
         private const float ClassSelectionWindowSeconds = FreezeTimeSeconds;
         private bool _restartAllowed = true;
         private readonly Dictionary<int, SteamID> _slotToSteamId = [];
+        private bool _timingApplied = false;
 
         // === Plugin lifecycle ===
         public override void Load(bool hotReload)
