@@ -39,7 +39,14 @@ namespace ClassSystem
         private const float ClassSelectionWindowSeconds = FreezeTimeSeconds;
         private bool _restartAllowed = true;
         private readonly Dictionary<int, SteamID> _slotToSteamId = [];
-        private bool _timingApplied = false;
+        private int _classSelectionToken = 0;
+
+
+        // === Medic skill constants ===
+        private const string MedicSelfHealSkill = "self_heal";
+        private const int MedicSelfHealAmount = 40;
+        private const float MedicSelfHealCooldownSeconds = 20f;
+        private readonly Dictionary<ulong, float> _medicHealCooldowns = [];
 
         // === Plugin lifecycle ===
         public override void Load(bool hotReload)
@@ -62,8 +69,8 @@ namespace ClassSystem
 
             RegisterListener<Listeners.OnPlayerTakeDamagePre>(OnPlayerTakeDamagePre);
             AddCommandListener("jointeam", OnJoinTeam, HookMode.Pre);
-            
-            
+
+
         }
 
         public override void OnAllPluginsLoaded(bool hotReload)
@@ -125,7 +132,7 @@ namespace ClassSystem
         {
             // Konfiguracja ustawień serwera po starcie mapy.
             Logger.LogInformation("[DEBUG] Konfiguracja rozgrzewki");
-            
+
         }
 
 
@@ -203,14 +210,16 @@ namespace ClassSystem
             _classSelectionOpen = true;
             _selectedThisRound.Clear();
 
-            if (_timingApplied)
-                return HookResult.Continue;
-
-            _timingApplied = true;
+            _classSelectionToken++;
+            var token = _classSelectionToken;
 
             AddTimer(ClassSelectionWindowSeconds, () =>
             {
                 _classSelectionOpen = false;
+                if (_classSelectionToken == token)
+                {
+                    _classSelectionOpen = false;
+                }
             });
 
             return HookResult.Continue;
@@ -251,15 +260,15 @@ namespace ClassSystem
             var ctCount = players.Count(p => p.Team == CsTeam.CounterTerrorist);
             var ttCount = players.Count(p => p.Team == CsTeam.Terrorist);
 
-            CsTeam desiredTeam= CsTeam.Terrorist;
+            CsTeam desiredTeam = CsTeam.Terrorist;
 
             if (ttCount > ctCount)
             {
                 desiredTeam = CsTeam.CounterTerrorist;
             }
 
-                Logger.LogInformation($"[INFO] Zmieniam druzyne gracza {player.PlayerName} na {desiredTeam}");
-                player.ChangeTeam(desiredTeam);
+            Logger.LogInformation($"[INFO] Zmieniam druzyne gracza {player.PlayerName} na {desiredTeam}");
+            player.ChangeTeam(desiredTeam);
         }
 
         private void RestartIfNeeded()
@@ -307,7 +316,7 @@ namespace ClassSystem
             if (player == null || !player.IsValid || player.IsBot)
                 return;
 
-            if (_classMenu.GetApi() == null)
+            if (!_classMenu.HasApi())
             {
                 Logger.LogInformation("[DEBUG] ClassMenuAPI nie udało sie pobrać");
                 return;
@@ -319,7 +328,61 @@ namespace ClassSystem
             }
             _classMenu.ShowButtonClassMenu(player);
         }
-        
+
+        [ConsoleCommand("css_selfheal", "Medyk: samoleczenie")]
+        public void CommandMedicSelfHeal(CCSPlayerController? player, CommandInfo info)
+        {
+            if (player == null || !player.IsValid || player.IsBot)
+                return;
+
+            if (!_classMenu.TryGetSelectedClass(player.SteamID, out var classInfo) || classInfo == null)
+            {
+                player.PrintToChat("Najpierw wybierz klasę.");
+                return;
+            }
+
+            var hasSkill = classInfo.Skills.Any(skill =>
+                skill.Equals(MedicSelfHealSkill, StringComparison.OrdinalIgnoreCase));
+
+            if (!hasSkill)
+            {
+                player.PrintToChat("Ta klasa nie posiada umiejętności samoleczenia.");
+                return;
+            }
+
+            if (!player.PlayerPawn.IsValid || player.PlayerPawn.Value == null)
+            {
+                Logger.LogWarning("[DEBUG] Nie można uleczyć gracza {Player} – pawn niedostępny", player.PlayerName);
+                return;
+            }
+
+            var now = Server.CurrentTime;
+            if (_medicHealCooldowns.TryGetValue(player.SteamID, out var nextUseTime) && nextUseTime > now)
+            {
+                var remaining = nextUseTime - now;
+                player.PrintToChat($"Umiejętność samoleczenia będzie dostępna za {remaining:0.0}s.");
+                return;
+            }
+
+            var pawn = player.PlayerPawn.Value;
+            var newHealth = Math.Min(pawn.MaxHealth, pawn.Health + MedicSelfHealAmount);
+            pawn.Health = newHealth;
+            _medicHealCooldowns[player.SteamID] = now + MedicSelfHealCooldownSeconds;
+
+            try
+            {
+                player.GiveNamedItem("weapon_healthshot");
+                player.ExecuteClientCommandFromServer("use weapon_healthshot");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "[DEBUG] Nie udało się uruchomić animacji strzykawki dla {Player}", player.PlayerName);
+            }
+
+            player.PrintToChat($"Uleczono: +{MedicSelfHealAmount} HP.");
+        }
+    
+
 
         [ConsoleCommand("css_test", "testowanie")]
         public void CommandTest(CCSPlayerController? player, CommandInfo info)

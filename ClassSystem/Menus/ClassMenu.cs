@@ -60,6 +60,12 @@ public sealed class ClassMenu
         }
     }
     //******************************** GETTERY *******************************
+
+    public bool HasApi()
+    {
+        return _api != null;
+    }
+
     public IMenuApi GetApi()
     {
         if (_api == null)
