@@ -193,20 +193,21 @@ public sealed class ClassMenu
         pawn.VelocityModifier = stats.Speed;
     }
 
-    private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<string> skills, bool announce)
+    private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
     {
         if (skills.Count == 0)
         {
             return;
         }
+        var skillIds = skills.Select(skill => skill.Id).ToArray();
 
         if (announce)
         {
-            var skillsText = string.Join(", ", skills);
+            var skillsText = string.Join(", ", skillIds);
             player.PrintToChat($"Umiejętności klasy: {skillsText}");
         }
 
-        _logger?.LogInformation("[DEBUG] Zastosowano umiejętności {Skills} dla gracza {Player}", string.Join(", ", skills), player.PlayerName);
+        _logger?.LogInformation("[DEBUG] Zastosowano umiejętności {Skills} dla gracza {Player}", string.Join(", ", skillIds), player.PlayerName);
     }
 
     private void GiveLoadout(CCSPlayerController player, IReadOnlyCollection<string> loadout)

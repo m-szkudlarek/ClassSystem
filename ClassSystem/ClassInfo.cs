@@ -14,7 +14,7 @@ public sealed class ClassInfo
     public ClassStats Stats { get; set; } = new();
 
     [JsonPropertyName("skills")]
-    public List<string> Skills { get; set; } = [];
+    public List<Configuration.SkillDefinition> Skills { get; set; } = [];
 
     [JsonIgnore]
     public int Hp

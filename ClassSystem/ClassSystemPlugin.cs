@@ -44,8 +44,6 @@ namespace ClassSystem
 
         // === Medic skill constants ===
         private const string MedicSelfHealSkill = "self_heal";
-        private const int MedicSelfHealAmount = 40;
-        private const float MedicSelfHealCooldownSeconds = 20f;
         private readonly Dictionary<ulong, float> _medicHealCooldowns = [];
 
         // === Plugin lifecycle ===
@@ -64,6 +62,7 @@ namespace ClassSystem
             RegisterListener<Listeners.OnClientPutInServer>(OnClientPutInServer);
             RegisterEventHandler<EventRoundStart>(OnRoundStart);
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
+            RegisterEventHandler<EventRoundFreezeEnd>(OnEventFreezeEnd);
             RegisterListener<Listeners.OnClientDisconnect>(OnClientDisconnect);
 
 
@@ -210,18 +209,15 @@ namespace ClassSystem
             _classSelectionOpen = true;
             _selectedThisRound.Clear();
 
-            _classSelectionToken++;
-            var token = _classSelectionToken;
+            return HookResult.Continue;
+        }
 
-            AddTimer(ClassSelectionWindowSeconds, () =>
-            {
-                _classSelectionOpen = false;
-                if (_classSelectionToken == token)
-                {
-                    _classSelectionOpen = false;
-                }
-            });
+        private HookResult OnEventFreezeEnd(EventRoundFreezeEnd ev, GameEventInfo info)
+        {
+            Logger.LogInformation("[DEBUG] Koniec czasu zamrożenia rundy - OnEventFreezeEnd");
+            // Zamknij okno wyboru klas po zakończeniu czasu zamrożenia.
 
+            _classSelectionOpen = false;
             return HookResult.Continue;
         }
 
@@ -278,6 +274,9 @@ namespace ClassSystem
                             !p.IsBot &&
                             (p.Team == CsTeam.CounterTerrorist ||
                              p.Team == CsTeam.Terrorist));
+
+            if (count == 1 || count == 2)
+                _restartAllowed = true;
 
             if ((count == 1 || count == 2) && _restartAllowed)
             {
@@ -341,10 +340,10 @@ namespace ClassSystem
                 return;
             }
 
-            var hasSkill = classInfo.Skills.Any(skill =>
-                skill.Equals(MedicSelfHealSkill, StringComparison.OrdinalIgnoreCase));
+            var selfHealSkill = classInfo.Skills.FirstOrDefault(skill =>
+                skill.Id.Equals(MedicSelfHealSkill, StringComparison.OrdinalIgnoreCase));
 
-            if (!hasSkill)
+            if (selfHealSkill == null)
             {
                 player.PrintToChat("Ta klasa nie posiada umiejętności samoleczenia.");
                 return;
@@ -365,9 +364,9 @@ namespace ClassSystem
             }
 
             var pawn = player.PlayerPawn.Value;
-            var newHealth = Math.Min(pawn.MaxHealth, pawn.Health + MedicSelfHealAmount);
+            var newHealth = Math.Min(pawn.MaxHealth, pawn.Health + selfHealSkill.Heal);
             pawn.Health = newHealth;
-            _medicHealCooldowns[player.SteamID] = now + MedicSelfHealCooldownSeconds;
+            _medicHealCooldowns[player.SteamID] = now + selfHealSkill.Cooldown;
 
             try
             {
@@ -379,7 +378,7 @@ namespace ClassSystem
                 Logger.LogWarning(ex, "[DEBUG] Nie udało się uruchomić animacji strzykawki dla {Player}", player.PlayerName);
             }
 
-            player.PrintToChat($"Uleczono: +{MedicSelfHealAmount} HP.");
+            player.PrintToChat($"Uleczono: +{selfHealSkill.Heal} HP.");
         }
     
 
