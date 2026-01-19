@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using System.Linq;
 using System.Numerics;
 using static CounterStrikeSharp.API.Core.Listeners;
+using Vector = CounterStrikeSharp.API.Modules.Utils.Vector;
 
 namespace ClassSystem
 {
@@ -387,12 +388,44 @@ namespace ClassSystem
         public void CommandTest(CCSPlayerController? player, CommandInfo info)
         {
 
-            if (player == null || !player.IsValid || player.IsBot)
+            if (player == null || !player.IsValid || player.PlayerPawn == null || !player.PlayerPawn.IsValid || player.PlayerPawn.Value == null)
                 return;
-            Server.ExecuteCommand("mp_warmuptime 0");
-            Server.ExecuteCommand("mp_warmup_end");
-            Server.ExecuteCommand($"mp_freezetime {FreezeTimeSeconds}");
 
+            try
+            {
+                player.GiveNamedItem("weapon_healthshot");
+                player.PrintToChat("✔ Otrzymałeś Healthshot (weapon_healthshot)");
+                Logger.LogInformation($"[TEST] Nadano weapon_healthshot graczowi {player.PlayerName}");
+            }
+            catch (Exception ex)
+            {
+                player.PrintToChat("❌ Nie udało się nadać Healthshot");
+                Logger.LogError(ex, "[TEST] Błąd przy nadawaniu weapon_healthshot");
+            }
+
+            var pawn = player.PlayerPawn.Value;
+            if (pawn.WeaponServices != null)
+            {
+                foreach (var weapon in pawn.WeaponServices.MyWeapons)
+                {
+                    Logger.LogInformation($"[INV] {weapon.Value?.DesignerName}");
+                }
+            }
+
+            // upewnij się że jest wyciągnięty
+            player.ExecuteClientCommand("use weapon_healthshot");
+
+            // krótka sekwencja attack (1 tick wystarczy)
+            Server.NextFrame(() =>
+            {
+                player.ExecuteClientCommand("+attack");
+                Server.NextFrame(() =>
+                {
+                    player.ExecuteClientCommand("-attack");
+                });
+            });
+
+            player.PrintToChat("💉 Próba użycia healthshot");
         }
     }
 }

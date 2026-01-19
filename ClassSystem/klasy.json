@@ -134,14 +134,8 @@
       "damageMultiplier": 0.95
     }
   },
-  "stats",
-  :,
-  {
-    "hp": 120,
-    "speed": 1.00,
-    "damageMultiplier": 0.95
-  },
-  },
+  
+  
 
   // ------------------------------------------
   // KLASA: PREMIUM – "JOHNNY SILVERHAND"
