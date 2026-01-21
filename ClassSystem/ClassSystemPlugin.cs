@@ -411,21 +411,6 @@ namespace ClassSystem
                     Logger.LogInformation($"[INV] {weapon.Value?.DesignerName}");
                 }
             }
-
-            // upewnij się że jest wyciągnięty
-            player.ExecuteClientCommand("use weapon_healthshot");
-
-            // krótka sekwencja attack (1 tick wystarczy)
-            Server.NextFrame(() =>
-            {
-                player.ExecuteClientCommand("+attack");
-                Server.NextFrame(() =>
-                {
-                    player.ExecuteClientCommand("-attack");
-                });
-            });
-
-            player.PrintToChat("💉 Próba użycia healthshot");
         }
     }
 }
