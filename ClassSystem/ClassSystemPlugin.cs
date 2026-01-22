@@ -1,5 +1,7 @@
 ﻿using ClassSystem.Configuration;
 using ClassSystem.Menus;
+using ClassSystem.Runtime;
+using ClassSystem.Skills;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
@@ -12,6 +14,7 @@ using CounterStrikeSharp.API.Modules.Menu;
 using CounterStrikeSharp.API.Modules.Utils;
 using MenuManager;         // dla IMenuManager
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using static CounterStrikeSharp.API.Core.Listeners;
@@ -32,7 +35,10 @@ namespace ClassSystem
 
         //------------------------Fields------------------------
         private ClassMenu _classMenu = default!;
-        private List<ClassInfo> _classes = [];
+        private List<ClassDefinition> _classes = [];
+        private List<SkillDefinition> _skills = [];
+        private Dictionary<string, List<SkillDefinition>> _classSkillMap = [];
+
         private readonly HashSet<SteamID> _registered = [];  // “zarejestrowani w tej sesji”
         private readonly HashSet<ulong> _selectedThisRound = [];
         private bool _classSelectionOpen;
@@ -43,9 +49,9 @@ namespace ClassSystem
         private int _classSelectionToken = 0;
 
 
-        // === Medic skill constants ===
+        // === Skill constants ===
         private const string MedicSelfHealSkill = "self_heal";
-        private readonly Dictionary<ulong, float> _medicHealCooldowns = [];
+        private readonly Dictionary<ulong, RuntimeClass> _runtimeClasses = [];
 
         // === Plugin lifecycle ===
         public override void Load(bool hotReload)
@@ -53,6 +59,8 @@ namespace ClassSystem
             // Inicjalizacja konfiguracji i stanu.
             _classMenu = new ClassMenu();
             _classes = ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
+            _skills = SkillsConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
+            _classSkillMap = ClassSkillBinder.Bind(_classes, _skills, Logger);
             _classMenu.SetLogger(Logger);
             _classMenu.SetClasses(_classes);
             _classMenu.ClassApplied += OnClassApplied;
@@ -184,6 +192,23 @@ namespace ClassSystem
         {
             Logger.LogInformation("[DEBUG] Gracz odrodził się - OnPlayerSpawn");
 
+
+            /*var player = ev.Userid;
+            if (player == null || !player.IsValid || player.IsBot)
+                return HookResult.Continue;
+
+            if (!_runtimeClasses.TryGetValue(player.SteamID, out var runtime))
+                return HookResult.Continue;
+
+            AddTimer(0.2f, () =>
+            {
+                if (!player.IsValid || !player.PlayerPawn.IsValid)
+                    return;
+
+                GrantItemsForRuntime(player, runtime);
+            });*/
+
+            return HookResult.Continue;
             /* var player = ev.Userid;
              if (player == null || !player.IsValid || player.IsBot)
                  return HookResult.Continue;
@@ -199,8 +224,6 @@ namespace ClassSystem
                  _classMenu?.ApplySavedClass(player);
 
              });*/
-
-            return HookResult.Continue;
         }
 
         private HookResult OnRoundStart(EventRoundStart ev, GameEventInfo info)
@@ -209,6 +232,11 @@ namespace ClassSystem
             // Okno wyboru klas tylko na starcie rundy.
             _classSelectionOpen = true;
             _selectedThisRound.Clear();
+
+            foreach (var runtime in _runtimeClasses.Values)
+            {
+                runtime.ResetRound();
+            }
 
             return HookResult.Continue;
         }
@@ -241,9 +269,46 @@ namespace ClassSystem
             );
         }
 
-        private void OnClassApplied(CCSPlayerController player, ClassInfo info)
+        private void OnClassApplied(CCSPlayerController player, ClassDefinition info)
         {
+            // 1️⃣ Oznacz, że gracz wybrał klasę w tej rundzie
             _selectedThisRound.Add(player.SteamID);
+
+            // 2️⃣ Pobierz ID klasy
+            var classId = info.Id;
+
+            // 3️⃣ Sprawdź, czy mamy zbindowane skille dla tej klasy
+            if (!_classSkillMap.TryGetValue(classId, out var skillDefinitions))
+            {
+                Logger.LogWarning(
+                    "[WARN] Brak skilli dla klasy '{ClassId}' (gracz {Player})",
+                    classId,
+                    player.PlayerName
+                );
+                skillDefinitions = [];
+            }
+
+            // 4️⃣ Utwórz runtime skille przez SkillFactory
+            var runtimeSkills = skillDefinitions
+                .Select(SkillFactory.CreateSkill)
+                .ToList();
+
+            // 5️⃣ Utwórz RuntimeClass
+            var runtimeClass = new RuntimeClass(
+                player.SteamID,
+                classId,
+                runtimeSkills
+            );
+
+            // 6️⃣ Przypisz RuntimeClass do gracza (nadpisuje poprzednią, jeśli była)
+            _runtimeClasses[player.SteamID] = runtimeClass;
+
+            Logger.LogInformation(
+                "[DEBUG] Przypisano klasę '{ClassId}' graczowi {Player} ({SkillCount} skilli)",
+                classId,
+                player.PlayerName,
+                runtimeSkills.Count
+            );
         }
 
 
@@ -329,87 +394,45 @@ namespace ClassSystem
             _classMenu.ShowButtonClassMenu(player);
         }
 
-        [ConsoleCommand("css_selfheal", "Medyk: samoleczenie")]
-        public void CommandMedicSelfHeal(CCSPlayerController? player, CommandInfo info)
+        private void GrantItemsForRuntime(CCSPlayerController player,RuntimeClass runtime)
         {
-            if (player == null || !player.IsValid || player.IsBot)
-                return;
-
-            if (!_classMenu.TryGetSelectedClass(player.SteamID, out var classInfo) || classInfo == null)
-            {
-                player.PrintToChat("Najpierw wybierz klasę.");
-                return;
-            }
-
-            var selfHealSkill = classInfo.Skills.FirstOrDefault(skill =>
-                skill.Id.Equals(MedicSelfHealSkill, StringComparison.OrdinalIgnoreCase));
-
-            if (selfHealSkill == null)
-            {
-                player.PrintToChat("Ta klasa nie posiada umiejętności samoleczenia.");
-                return;
-            }
-
-            if (!player.PlayerPawn.IsValid || player.PlayerPawn.Value == null)
-            {
-                Logger.LogWarning("[DEBUG] Nie można uleczyć gracza {Player} – pawn niedostępny", player.PlayerName);
-                return;
-            }
-
-            var now = Server.CurrentTime;
-            if (_medicHealCooldowns.TryGetValue(player.SteamID, out var nextUseTime) && nextUseTime > now)
-            {
-                var remaining = nextUseTime - now;
-                player.PrintToChat($"Umiejętność samoleczenia będzie dostępna za {remaining:0.0}s.");
-                return;
-            }
-
-            var pawn = player.PlayerPawn.Value;
-            var newHealth = Math.Min(pawn.MaxHealth, pawn.Health + selfHealSkill.Heal);
-            pawn.Health = newHealth;
-            _medicHealCooldowns[player.SteamID] = now + selfHealSkill.Cooldown;
-
-            try
+            // self_heal → healthshot
+            if (runtime.GetSkill("self_heal") != null)
             {
                 player.GiveNamedItem("weapon_healthshot");
-                player.ExecuteClientCommandFromServer("use weapon_healthshot");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning(ex, "[DEBUG] Nie udało się uruchomić animacji strzykawki dla {Player}", player.PlayerName);
             }
 
-            player.PrintToChat($"Uleczono: +{selfHealSkill.Heal} HP.");
+            // kolejne skille → kolejne itemy
         }
-    
-
 
         [ConsoleCommand("css_test", "testowanie")]
         public void CommandTest(CCSPlayerController? player, CommandInfo info)
         {
 
-            if (player == null || !player.IsValid || player.PlayerPawn == null || !player.PlayerPawn.IsValid || player.PlayerPawn.Value == null)
+            if (player == null || !player.IsValid || player.IsBot)
                 return;
 
-            try
+            // 1️⃣ Czy gracz ma RuntimeClass?
+            if (!_runtimeClasses.TryGetValue(player.SteamID, out var runtime))
             {
-                player.GiveNamedItem("weapon_healthshot");
-                player.PrintToChat("✔ Otrzymałeś Healthshot (weapon_healthshot)");
-                Logger.LogInformation($"[TEST] Nadano weapon_healthshot graczowi {player.PlayerName}");
-            }
-            catch (Exception ex)
-            {
-                player.PrintToChat("❌ Nie udało się nadać Healthshot");
-                Logger.LogError(ex, "[TEST] Błąd przy nadawaniu weapon_healthshot");
+                player.PrintToChat("❌ Nie masz jeszcze wybranej klasy.");
+                return;
             }
 
-            var pawn = player.PlayerPawn.Value;
-            if (pawn.WeaponServices != null)
+            // 2️⃣ Czy klasa ma skill self_heal?
+            var skill = runtime.GetSkill("self_heal");
+            if (skill == null)
             {
-                foreach (var weapon in pawn.WeaponServices.MyWeapons)
-                {
-                    Logger.LogInformation($"[INV] {weapon.Value?.DesignerName}");
-                }
+                player.PrintToChat("❌ Twoja klasa nie posiada umiejętności samoleczenia.");
+                return;
+            }
+
+            // 3️⃣ Spróbuj użyć skilla
+            var success = skill.Use(player, player);
+
+            if (!success)
+            {
+                player.PrintToChat("⏳ Nie możesz teraz użyć tej umiejętności (cooldown lub brak użyć).");
             }
         }
     }

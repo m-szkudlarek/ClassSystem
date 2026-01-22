@@ -13,7 +13,7 @@ public static class SkillFactory
 
         return definition.Id switch
         {
-            "heal_ally" => new HealAllySkill(definition),
+            //"heal_ally" => new HealAllySkill(definition),
             "self_heal" => new SelfHealSkill(definition),
             _ => throw new InvalidOperationException($"Unknown skill id '{definition.Id}'.")
         };

@@ -9,14 +9,18 @@ public abstract class BaseSkill : IClassSkill
     protected BaseSkill(SkillDefinition definition)
     {
         Definition = definition;
+        ResetRound();
     }
 
     protected SkillDefinition Definition { get; }
 
     public string Id => Definition.Id;
     public string Name => Definition.Id;
+
     public float Cooldown => Definition.Cooldown;
     public float LastUseTime { get; private set; } = float.NegativeInfinity;
+
+    public int RemainingUses { get; private set; }
 
     public bool CanUse(CCSPlayerController caster)
     {
@@ -25,7 +29,19 @@ public abstract class BaseSkill : IClassSkill
             return false;
         }
 
-        return Server.CurrentTime - LastUseTime >= Cooldown;
+        // cooldown
+        if (Server.CurrentTime - LastUseTime < Cooldown)
+        {
+            return false;
+        }
+
+        // reuse (-1 = infinite)
+        if (Definition.Reuse >= 0 && RemainingUses <= 0)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     public bool Use(CCSPlayerController caster, CCSPlayerController? target)
@@ -41,8 +57,23 @@ public abstract class BaseSkill : IClassSkill
         }
 
         LastUseTime = Server.CurrentTime;
+
+        if (Definition.Reuse >= 0)
+        {
+            RemainingUses--;
+        }
+
         return true;
     }
 
-    protected abstract bool Execute(CCSPlayerController caster, CCSPlayerController? target);
+    public void ResetRound()
+    {
+        RemainingUses = Definition.Reuse;
+        LastUseTime = float.NegativeInfinity;
+    }
+
+    protected abstract bool Execute(
+        CCSPlayerController caster,
+        CCSPlayerController? target
+    );
 }

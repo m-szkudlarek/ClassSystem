@@ -10,16 +10,30 @@ public sealed class SelfHealSkill : BaseSkill
     {
     }
 
-    protected override bool Execute(CCSPlayerController caster, CCSPlayerController? target)
+    protected override bool Execute(
+        CCSPlayerController caster,
+        CCSPlayerController? target)
     {
-        var pawn = caster.PlayerPawn.Value;
-        if (pawn == null || !pawn.IsValid)
-        {
+        if (!caster.PlayerPawn.IsValid || caster.PlayerPawn.Value == null)
             return false;
-        }
 
-        var newHealth = Math.Min(pawn.Health + Definition.Heal, pawn.MaxHealth);
+        var pawn = caster.PlayerPawn.Value;
+
+        var healAmount = Definition.Power;
+        if (healAmount <= 0)
+            return false;
+
+        var newHealth = Math.Min(
+            pawn.MaxHealth,
+            pawn.Health + healAmount
+        );
+
+        if (newHealth <= pawn.Health)
+            return false;
+
         pawn.Health = newHealth;
+
+        caster.PrintToChat($"Uleczono: +{newHealth - pawn.Health} HP");
         return true;
     }
 }

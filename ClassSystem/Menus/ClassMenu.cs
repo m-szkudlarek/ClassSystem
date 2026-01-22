@@ -1,4 +1,5 @@
-﻿using CounterStrikeSharp.API.Core;
+﻿using ClassSystem.Configuration;
+using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Entities.Constants;
 using CounterStrikeSharp.API.Modules.Menu;
 using CounterStrikeSharp.API.Modules.Utils;
@@ -13,14 +14,14 @@ public sealed class ClassMenu
     private ILogger? _logger;
 
     private readonly Dictionary<ulong, string> _selectedClass = [];
-    private readonly Dictionary<string, ClassInfo> _classLookup = new(StringComparer.OrdinalIgnoreCase);
-    private List<ClassInfo> _classes = [];
+    private readonly Dictionary<string, ClassDefinition> _classLookup = new(StringComparer.OrdinalIgnoreCase);
+    private List<ClassDefinition> _classes = [];
     public IReadOnlyDictionary<ulong, string> GetSelections() => _selectedClass;
     public bool HasClass(string classId) => _classLookup.ContainsKey(classId);
 
-    public event Action<CCSPlayerController, ClassInfo>? ClassApplied;
+    public event Action<CCSPlayerController, ClassDefinition>? ClassApplied;
 
-    public bool TryGetSelectedClass(ulong steamId, out ClassInfo? info)
+    public bool TryGetSelectedClass(ulong steamId, out ClassDefinition? info)
     {
         info = null;
 
@@ -49,7 +50,7 @@ public sealed class ClassMenu
         _logger = logger;
     }
 
-    public void SetClasses(IEnumerable<ClassInfo> classes)
+    public void SetClasses(IEnumerable<ClassDefinition> classes)
     {
         _classes = [.. classes.Where(cls => !string.IsNullOrWhiteSpace(cls.Id))];
 
@@ -126,7 +127,7 @@ public sealed class ClassMenu
         menu.Open(player);
     }
 
-    public bool TryApplyClass(CCSPlayerController player, string classId, out ClassInfo? appliedInfo)
+    public bool TryApplyClass(CCSPlayerController player, string classId, out ClassDefinition? appliedInfo)
     {
         appliedInfo = null;
 
@@ -151,7 +152,7 @@ public sealed class ClassMenu
         return true;
     }
 
-    public void ApplyClass(CCSPlayerController player, ClassInfo info)
+    public void ApplyClass(CCSPlayerController player, ClassDefinition info)
     {
         if (player == null || !player.IsValid)
             return;
@@ -163,7 +164,7 @@ public sealed class ClassMenu
         ClassApplied?.Invoke(player, info);
     }
 
-    private void ApplyClassEffects(CCSPlayerController player, ClassInfo info, bool announce)
+    private void ApplyClassEffects(CCSPlayerController player, ClassDefinition info, bool announce)
     {
         if (player == null || !player.IsValid)
             return;
@@ -177,7 +178,7 @@ public sealed class ClassMenu
 
         ApplyStats(pawn, info.Stats);
         GiveLoadout(player, info.Loadout);
-        ApplySkills(player, info.Skills, announce);
+        //ApplySkills(player, info.Skills, announce);
 
         if (announce)
         {
@@ -193,7 +194,7 @@ public sealed class ClassMenu
         pawn.VelocityModifier = stats.Speed;
     }
 
-    private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
+   /* private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
     {
         if (skills.Count == 0)
         {
@@ -208,7 +209,7 @@ public sealed class ClassMenu
         }
 
         _logger?.LogInformation("[DEBUG] Zastosowano umiejętności {Skills} dla gracza {Player}", string.Join(", ", skillIds), player.PlayerName);
-    }
+    }*/
 
     private void GiveLoadout(CCSPlayerController player, IReadOnlyCollection<string> loadout)
     {

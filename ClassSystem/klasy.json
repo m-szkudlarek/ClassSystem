@@ -115,19 +115,7 @@
     "name": "Desmond Doss",
     "role": "Support / Team Sustain",
     "loadout": [ "GalilAR" ],
-    "skills": [
-      {
-        "id": "heal_ally",
-        "cooldown": 12.0,
-        "heal": 30,
-        "range": 300.0
-      },
-      {
-        "id": "self_heal",
-        "cooldown": 20.0,
-        "heal": 40
-      }
-    ],
+    "skills": ["self_heal"],
     "stats": {
       "hp": 120,
       "speed": 1.00,

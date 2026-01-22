@@ -10,9 +10,9 @@ public sealed class SkillDefinition
     [JsonPropertyName("cooldown")]
     public float Cooldown { get; set; }
 
-    [JsonPropertyName("heal")]
-    public int Heal { get; set; }
+    [JsonPropertyName("power")]
+    public int Power { get; set; }
 
-    [JsonPropertyName("range")]
-    public float? Range { get; set; }
+    [JsonPropertyName("reuse")]
+    public int Reuse { get; set; }
 }

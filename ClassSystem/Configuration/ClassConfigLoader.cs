@@ -13,7 +13,7 @@ public static class ClassConfigLoader
         AllowTrailingCommas = true,
         NumberHandling = JsonNumberHandling.AllowReadingFromString
     };
-    public static List<ClassInfo> LoadOrCreate(string moduleDirectory, ILogger logger)
+    public static List<ClassDefinition> LoadOrCreate(string moduleDirectory, ILogger logger)
     {
         var defaultClasses = GetDefaultClasses();
         var configPath = Path.Combine(moduleDirectory, "klasy.json");
@@ -57,7 +57,7 @@ public static class ClassConfigLoader
         }
     }
 
-    private static void TryWriteDefaultConfig(string configPath, IEnumerable<ClassInfo> defaults)
+    private static void TryWriteDefaultConfig(string configPath, IEnumerable<ClassDefinition> defaults)
     {
         try
         {
@@ -72,11 +72,11 @@ public static class ClassConfigLoader
             // Ignorujemy – jeśli nie możemy zapisać, plugin dalej zadziała na domyślnych.
         }
     }
-    private static List<ClassInfo>? DeserializeClasses(string json, ILogger logger)
+    private static List<ClassDefinition>? DeserializeClasses(string json, ILogger logger)
     {
         try
         {
-            var classes = JsonSerializer.Deserialize<List<ClassInfo>>(json, SerializerOptions);
+            var classes = JsonSerializer.Deserialize<List<ClassDefinition>>(json, SerializerOptions);
             if (classes == null)
             {
                 logger.LogInformation("[DEBUG] Plik klas musi zawierać tablicę obiektów.");
@@ -93,17 +93,24 @@ public static class ClassConfigLoader
         }
     }
 
-    private static void NormalizeClass(ClassInfo classInfo)
+    private static void NormalizeClass(ClassDefinition classInfo)
     {
         classInfo.Stats ??= new ClassStats();
         classInfo.Loadout ??= [];
         classInfo.Skills ??= [];
+
+        classInfo.Skills = classInfo.Skills
+    .Where(s => !string.IsNullOrWhiteSpace(s))
+    .Select(s => s.Trim().ToLowerInvariant())
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToList();
+
         classInfo.Stats.Normalize();
     }
 
-    private static List<ClassInfo> GetDefaultClasses() =>
+    private static List<ClassDefinition> GetDefaultClasses() =>
     [
-        new ClassInfo
+        new ClassDefinition
         {
             Id = "rambo",
             Name = "Rambo",

@@ -1,15 +1,40 @@
 ﻿using ClassSystem.Skills;
+using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Modules.Entities;
 
 namespace ClassSystem.Runtime;
 
 public sealed class RuntimeClass
 {
-    public RuntimeClass(ClassInfo definition)
+    public ulong SteamId { get; }
+    public string ClassId { get; }
+
+    private readonly List<IClassSkill> _skills;
+
+    public RuntimeClass(
+        ulong steamId,
+        string classId,
+        IEnumerable<IClassSkill> skills)
     {
-        Definition = definition ?? throw new ArgumentNullException(nameof(definition));
-        Skills = definition.Skills.Select(SkillFactory.CreateSkill).ToList();
+        SteamId = steamId;
+        ClassId = classId;
+        _skills = [.. skills];
     }
 
-    public ClassInfo Definition { get; }
-    public IReadOnlyList<IClassSkill> Skills { get; }
+    public IReadOnlyList<IClassSkill> Skills => _skills;
+
+    public IClassSkill? GetSkill(string skillId)
+    {
+        return _skills.FirstOrDefault(
+            s => s.Id.Equals(skillId, StringComparison.OrdinalIgnoreCase)
+        );
+    }
+
+    public void ResetRound()
+    {
+        foreach (var skill in _skills)
+        {
+            skill.ResetRound();
+        }
+    }
 }
