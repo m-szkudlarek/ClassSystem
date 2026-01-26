@@ -1,8 +1,8 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace ClassSystem;
+namespace ClassSystem.Configuration;
 
-public sealed class ClassInfo
+public sealed class ClassDefinition
 {
     [JsonPropertyName("id")]
     public string Id { get; set; } = string.Empty;
@@ -12,6 +12,9 @@ public sealed class ClassInfo
 
     [JsonPropertyName("stats")]
     public ClassStats Stats { get; set; } = new();
+
+    [JsonPropertyName("skills")]
+    public List<string> Skills { get; set; } = [];
 
     [JsonIgnore]
     public int Hp

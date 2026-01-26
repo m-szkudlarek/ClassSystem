@@ -1,4 +1,5 @@
-﻿using CounterStrikeSharp.API.Core;
+﻿using ClassSystem.Configuration;
+using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Entities.Constants;
 using CounterStrikeSharp.API.Modules.Menu;
 using CounterStrikeSharp.API.Modules.Utils;
@@ -12,12 +13,15 @@ public sealed class ClassMenu
     private IMenuApi? _api;
     private ILogger? _logger;
 
-    private readonly Dictionary<ulong, string> _selectedClass = [];
-    private readonly Dictionary<string, ClassInfo> _classLookup = new(StringComparer.OrdinalIgnoreCase);
-    private List<ClassInfo> _classes = [];
-    public IReadOnlyDictionary<ulong, string> GetSelections() => _selectedClass;
+    private readonly Dictionary<int, string> _selectedClass = [];
+    private readonly Dictionary<string, ClassDefinition> _classLookup = new(StringComparer.OrdinalIgnoreCase);
+    private List<ClassDefinition> _classes = [];
+    public IReadOnlyDictionary<int, string> GetSelections() => _selectedClass;
     public bool HasClass(string classId) => _classLookup.ContainsKey(classId);
-    public bool TryGetSelectedClass(ulong steamId, out ClassInfo? info)
+
+    public event Action<CCSPlayerController, ClassDefinition>? ClassApplied;
+
+    public bool TryGetSelectedClass(int steamId, out ClassDefinition? info)
     {
         info = null;
 
@@ -46,7 +50,7 @@ public sealed class ClassMenu
         _logger = logger;
     }
 
-    public void SetClasses(IEnumerable<ClassInfo> classes)
+    public void SetClasses(IEnumerable<ClassDefinition> classes)
     {
         _classes = [.. classes.Where(cls => !string.IsNullOrWhiteSpace(cls.Id))];
 
@@ -55,6 +59,21 @@ public sealed class ClassMenu
         {
             _classLookup[cls.Id] = cls;
         }
+    }
+    //******************************** GETTERY *******************************
+
+    public bool HasApi()
+    {
+        return _api != null;
+    }
+
+    public IMenuApi GetApi()
+    {
+        if (_api == null)
+        {
+            throw new InvalidOperationException("Menu API nie zostało ustawione.");
+        }
+        return _api;
     }
 
     // ************************************ FUNCKJE *******************************
@@ -73,6 +92,12 @@ public sealed class ClassMenu
         }
 
         var menu = _api.GetMenuForcetype("Wybierz klasę", MenuType.ButtonMenu);
+        if (menu == null)
+        {
+            _logger.LogWarning("[DEBUG] Nie udało się utworzyć menu wyboru klas.");
+            return;
+        }
+
         var index = 0;
 
 
@@ -82,7 +107,7 @@ public sealed class ClassMenu
         {
             string className = cls.Name;
             index++;
-            
+
 
             string label = $"{index}.{className}";
 
@@ -102,7 +127,7 @@ public sealed class ClassMenu
         menu.Open(player);
     }
 
-    public bool TryApplyClass(CCSPlayerController player, string classId, out ClassInfo? appliedInfo)
+    public bool TryApplyClass(CCSPlayerController player, string classId, out ClassDefinition? appliedInfo)
     {
         appliedInfo = null;
 
@@ -118,7 +143,7 @@ public sealed class ClassMenu
 
     public bool ApplySavedClass(CCSPlayerController player, bool announce = false)
     {
-        if (!TryGetSelectedClass(player.SteamID, out var info) || info == null)
+        if (!TryGetSelectedClass(player.UserId, out var info) || info == null)
         {
             return false;
         }
@@ -127,18 +152,19 @@ public sealed class ClassMenu
         return true;
     }
 
-    public void ApplyClass(CCSPlayerController player, ClassInfo info)
+    public void ApplyClass(CCSPlayerController player, ClassDefinition info)
     {
         if (player == null || !player.IsValid)
             return;
 
-        var steamId = player.SteamID;
-        _selectedClass[steamId] = info.Id;
+        var userId = player.UserId;
+        _selectedClass[userId] = info.Id;
 
         ApplyClassEffects(player, info, true);
+        ClassApplied?.Invoke(player, info);
     }
 
-    private void ApplyClassEffects(CCSPlayerController player, ClassInfo info, bool announce)
+    private void ApplyClassEffects(CCSPlayerController player, ClassDefinition info, bool announce)
     {
         if (player == null || !player.IsValid)
             return;
@@ -152,11 +178,12 @@ public sealed class ClassMenu
 
         ApplyStats(pawn, info.Stats);
         GiveLoadout(player, info.Loadout);
+        //ApplySkills(player, info.Skills, announce);
 
         if (announce)
         {
             player.PrintToChat($"Wybrano klasę: {info.Name}");
-            _logger?.LogInformation("[DEBUG] Gracz {Player} ({SteamId}) wybrał klasę {ClassId}", player.PlayerName, player.SteamID, info.Id);
+            _logger?.LogInformation("[DEBUG] Gracz {Player} (UserId {UserId}) wybrał klasę {ClassId}", player.PlayerName, player.UserId, info.Id);
         }
     }
 
@@ -166,6 +193,23 @@ public sealed class ClassMenu
         pawn.Health = stats.Hp;
         pawn.VelocityModifier = stats.Speed;
     }
+
+   /* private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
+    {
+        if (skills.Count == 0)
+        {
+            return;
+        }
+        var skillIds = skills.Select(skill => skill.Id).ToArray();
+
+        if (announce)
+        {
+            var skillsText = string.Join(", ", skillIds);
+            player.PrintToChat($"Umiejętności klasy: {skillsText}");
+        }
+
+        _logger?.LogInformation("[DEBUG] Zastosowano umiejętności {Skills} dla gracza {Player}", string.Join(", ", skillIds), player.PlayerName);
+    }*/
 
     private void GiveLoadout(CCSPlayerController player, IReadOnlyCollection<string> loadout)
     {
@@ -203,7 +247,7 @@ public sealed class ClassMenu
         }
     }
 
-    private string NormalizeWeaponName(string weaponName)
+    private static string NormalizeWeaponName(string weaponName)
     {
         if (string.IsNullOrWhiteSpace(weaponName))
         {
@@ -230,6 +274,11 @@ public sealed class ClassMenu
         }
 
         return lowered;
+    }
+
+    internal bool TryGetSelectedClass(int? userId, out ClassDefinition classInfo)
+    {
+        throw new NotImplementedException();
     }
 }
 

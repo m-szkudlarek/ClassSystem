@@ -13,6 +13,7 @@
     "name": "Rambo",
     "role": "Heavy Assault / Close Combat",
     "loadout": [ "Negev", "Scythe" ],
+    "skills": [],
     "stats": {
       "hp": 130,
       "speed": 0.80,
@@ -29,6 +30,7 @@
     "name": "John Wick",
     "role": "Precision DPS",
     "loadout": [ "USP-S", "P90" ],
+    "skills": [],
     "stats": {
       "hp": 100,
       "speed": 1.05,
@@ -45,6 +47,7 @@
     "name": "Neo",
     "role": "Mobility / Dodge",
     "loadout": [ "DualBerettas", "Knife" ],
+    "skills": [],
     "stats": {
       "hp": 90,
       "speed": 1.15,
@@ -61,6 +64,7 @@
     "name": "Joker",
     "role": "Area Damage",
     "loadout": [ "Nova" ],
+    "skills": [],
     "stats": {
       "hp": 110,
       "speed": 1.00,
@@ -77,6 +81,7 @@
     "name": "Terminator",
     "role": "Frontline Tank",
     "loadout": [ "M249", "FiveSeven" ],
+    "skills": [],
     "stats": {
       "hp": 200,
       "speed": 0.85,
@@ -93,6 +98,7 @@
     "name": "Ghost",
     "role": "Long Range / Stealth",
     "loadout": [ "SSG08", "Glock" ],
+    "skills": [],
     "stats": {
       "hp": 90,
       "speed": 1.05,
@@ -109,12 +115,15 @@
     "name": "Desmond Doss",
     "role": "Support / Team Sustain",
     "loadout": [ "GalilAR" ],
+    "skills": ["self_heal"],
     "stats": {
       "hp": 120,
       "speed": 1.00,
       "damageMultiplier": 0.95
     }
   },
+  
+  
 
   // ------------------------------------------
   // KLASA: PREMIUM – "JOHNNY SILVERHAND"
@@ -125,6 +134,7 @@
     "role": "Premium Gunslinger",
     "access": "PREMIUM",
     "loadout": [ "Revolver", "Knife" ],
+    "skills": [],
     "stats": {
       "hp": 110,
       "speed": 1.05,

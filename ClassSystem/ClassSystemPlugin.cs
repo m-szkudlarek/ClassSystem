@@ -1,14 +1,24 @@
 ﻿using ClassSystem.Configuration;
 using ClassSystem.Menus;
+using ClassSystem.Runtime;
+using ClassSystem.Skills;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Core.Capabilities;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Cvars;
+using CounterStrikeSharp.API.Modules.Entities;
 using CounterStrikeSharp.API.Modules.Menu;
+using CounterStrikeSharp.API.Modules.Utils;
 using MenuManager;         // dla IMenuManager
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using static CounterStrikeSharp.API.Core.Listeners;
+using Vector = CounterStrikeSharp.API.Modules.Utils.Vector;
 
 namespace ClassSystem
 {
@@ -19,78 +29,141 @@ namespace ClassSystem
         public override string ModuleVersion => "0.1.0";
         public override string ModuleAuthor => "kerzixa";
 
-        private ClassMenu _classMenu = default!;
-        private readonly HashSet<ulong> _registered = new();  // “zarejestrowani w tej sesji”
-        private readonly PluginCapability<IMenuApi?> _menuCap = new("menu:nfcore");
-        private List<ClassInfo> _classes = [];
 
+        //------------------------Capabilitys------------------------
+        private readonly PluginCapability<IMenuApi?> _menuCap = new("menu:nfcore");
+
+        //------------------------Fields------------------------
+        private ClassMenu _classMenu = default!;
+        private List<ClassDefinition> _classes = [];
+        private List<SkillDefinition> _skills = [];
+        private Dictionary<string, List<SkillDefinition>> _classSkillMap = [];
+
+        private readonly HashSet<int> _selectedThisRound = [];
+        private bool _classSelectionOpen;
+        private const int FreezeTimeSeconds = 20;
+        private const float ClassSelectionWindowSeconds = FreezeTimeSeconds;
+        private bool _restartAllowed = true;
+        private bool _steamApiReady;
+
+
+        // === Skill constants ===
+        private const string MedicSelfHealSkill = "self_heal";
+        private readonly Dictionary<int, RuntimeClass> _runtimeClasses = [];
+
+        // === Plugin lifecycle ===
         public override void Load(bool hotReload)
         {
-            // Stwórz obiekty, zainicjuj cache, przygotuj słowniki itd.
+            // Inicjalizacja konfiguracji i stanu.
             _classMenu = new ClassMenu();
-            _classMenu.SetLogger(Logger);
             _classes = ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
+            _skills = SkillsConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
+            _classSkillMap = ClassSkillBinder.Bind(_classes, _skills, Logger);
+            _classMenu.SetLogger(Logger);
             _classMenu.SetClasses(_classes);
+            _classMenu.ClassApplied += OnClassApplied;
 
+            // Rejestracja listenerów i eventów.
+            RegisterListener<Listeners.OnMapStart>(OnMapStart);
+            RegisterListener<Listeners.OnClientAuthorized>(OnClientAuthorized);
+            RegisterListener<Listeners.OnClientPutInServer>(OnClientPutInServer);
+            RegisterEventHandler<EventRoundStart>(OnRoundStart);
+            RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
+            RegisterEventHandler<EventRoundFreezeEnd>(OnEventFreezeEnd);
+            RegisterListener<Listeners.OnClientDisconnect>(OnClientDisconnect);
+
+
+            RegisterListener<Listeners.OnGameServerSteamAPIActivated>(OnSteamApiActivated);
+            RegisterListener<Listeners.OnGameServerSteamAPIDeactivated>(OnSteamApiDeactivated);
             RegisterListener<Listeners.OnPlayerTakeDamagePre>(OnPlayerTakeDamagePre);
+            AddCommandListener("jointeam", OnJoinTeam, HookMode.Pre);
 
-            RegisterEventHandler<EventPlayerSpawn>((ev, info) =>
-            {
-                var player = ev.Userid;
-                if (player == null || !player.IsValid || player.IsBot)
-                    return HookResult.Continue;
 
-                // spawn bywa zanim pawn jest gotowy – daj krótki delay
-                AddTimer(0.5f, () =>
-                {
-                    // PlayerPawn to CHandle – sprawdzaj IsValid / Value
-                    if (!player.PlayerPawn.IsValid || player.PlayerPawn.Value == null)
-                        return;
-
-                    var steam64 = player.SteamID;
-
-                    _classMenu?.ApplySavedClass(player);
-
-                    // GUARD: nie rób rejestracji drugi raz
-                    if (_registered.Contains(steam64))
-                        return;
-
-                    RegisterPlayer(player);
-                });
-
-                return HookResult.Continue;
-            });
-        }
-
-        [ConsoleCommand("css_klasa", "Otwiera menu klas")]
-        public void CmdOpenClassMenu(CCSPlayerController? player, CommandInfo info)
-        {
-
-            if (player == null || !player.IsValid || player.IsBot)
-                return;
-
-            if (_menuCap.Get() == null)
-            {
-                Logger.LogInformation("[DEBUG] ClassMenuAPI nie udało sie pobrać");
-                return;
-            }
-            _classMenu.ShowButtonClassMenu(player);
         }
 
         public override void OnAllPluginsLoaded(bool hotReload)
         {
+            // Po wczytaniu pluginów konfigurujemy API menu i wyłączamy rozgrzewkę.
             Logger.LogInformation("[DEBUG] Próba pobrania api");
             var plugin = _menuCap.Get();
 
             if (plugin == null)
             {
-                Logger.LogInformation("[DEBUG] MenuManager Core not found...");
+                Logger.LogInformation("[DEBUG] MenuManager nie znaleziono...");
                 return;
             }
             _classMenu.SetApi(plugin);
-            _classMenu.SetLogger(Logger);
         }
 
+        public void OnClientAuthorized(int playerSlot, SteamID steamId) {
+
+                Logger.LogInformation("[DEBUG],OnClientAuthorized");
+
+        }
+
+        public void OnClientPutInServer(int playerSlot) {
+
+            Logger.LogInformation("[DEBUG] Gracz dołączył do serwera");
+            CCSPlayerController? ccsPlayerController = Utilities.GetPlayerFromSlot(playerSlot);
+            if (ccsPlayerController == null || !ccsPlayerController.IsValid || ccsPlayerController.IsBot)
+                return;
+
+            AddTimer(0.2f, () =>
+            {
+
+                if (ccsPlayerController.Team is CsTeam.CounterTerrorist or CsTeam.Terrorist)
+                    return;
+
+                EnsureBalancedTeam(ccsPlayerController); // Twoja logika
+                RestartIfNeeded();          // tylko 1–2 graczy
+            });
+
+            //POWITANIE
+            ccsPlayerController.PrintToChat($"Witaj, {ccsPlayerController.PlayerName}!");
+            ccsPlayerController.PrintToChat($"Wybierz klasę, komend !klasa ");
+
+        }
+
+        // Helpery do API Steam
+        private void OnSteamApiActivated()
+        {
+            _steamApiReady = true;
+            Logger.LogInformation("[INFO] SteamAPI aktywne.");
+        }
+
+        private void OnSteamApiDeactivated()
+        {
+            _steamApiReady = false;
+            Logger.LogWarning("[WARN] SteamAPI wyłączone.");
+        }
+
+        public void OnMapStart(string mapName)
+        {
+            // Konfiguracja ustawień serwera po starcie mapy.
+            Logger.LogInformation("[DEBUG] Konfiguracja rozgrzewki");
+
+        }
+
+
+        private HookResult OnJoinTeam(CCSPlayerController? player, CommandInfo info)
+        {
+            /*Logger.LogInformation("[DEBUG] Gracz próbuje zmienić drużynę.");
+            if (player == null || !player.IsValid || player.IsBot)
+            {
+                return HookResult.Continue;
+            }
+
+            Logger.LogInformation("[DEBUG] Gracz próbuje zmienić drużynę.Za ifem");
+            // Zablokuj ręczny wybór drużyny - wymuszamy balans.
+            EnsureBalancedTeam(player);
+            RestartIfNeeded();
+
+            return HookResult.Handled;*/
+
+            return HookResult.Continue;
+        }
+
+        // === Event handlers ===
         private HookResult OnPlayerTakeDamagePre(CCSPlayerPawn victim, CTakeDamageInfo info)
         {
             if (info == null || info.Attacker == null || !info.Attacker.IsValid)
@@ -107,7 +180,12 @@ namespace ClassSystem
                 return HookResult.Continue;
             }
 
-            if (!_classMenu.TryGetSelectedClass(attackerController.SteamID, out var classInfo) || classInfo == null)
+            if (!TryGetUserId(attackerController, out var attackerUserId))
+            {
+                return HookResult.Continue;
+            }
+
+            if (!_classMenu.TryGetSelectedClass(attackerUserId, out var classInfo) || classInfo == null)
             {
                 return HookResult.Continue;
             }
@@ -116,25 +194,266 @@ namespace ClassSystem
             return HookResult.Continue;
         }
 
-        private void RegisterPlayer(CCSPlayerController player)
+        private HookResult OnPlayerSpawn(EventPlayerSpawn ev, GameEventInfo info)
         {
-            ulong steam64 = player.SteamID;
-            // Use Add() directly and check its return value instead of Contains() + Add()
-            if (_registered.Add(steam64))
-            {
-                player.PrintToChat($"Witaj, {player.PlayerName}!");
-                Logger.LogInformation($"[DEBUG]Zarejestrowano gracza: {steam64} ({player.PlayerName})");
+            Logger.LogInformation("[DEBUG] Gracz odrodził się - OnPlayerSpawn");
 
-                // tutaj możesz od razu pokazywać menu klas
-                if (_classMenu == null) return;
-                _classMenu.ShowButtonClassMenu(player);
+
+            /*var player = ev.Userid;
+            if (player == null || !player.IsValid || player.IsBot)
+                return HookResult.Continue;
+
+            if (!_runtimeClasses.TryGetValue(player.SteamID, out var runtime))
+                return HookResult.Continue;
+
+            AddTimer(0.2f, () =>
+            {
+                if (!player.IsValid || !player.PlayerPawn.IsValid)
+                    return;
+
+                GrantItemsForRuntime(player, runtime);
+            });*/
+
+            return HookResult.Continue;
+            /* var player = ev.Userid;
+             if (player == null || !player.IsValid || player.IsBot)
+                 return HookResult.Continue;
+
+             // spawn bywa zanim pawn jest gotowy – daj krótki delay
+             AddTimer(0.5f, () =>
+             {
+                 // PlayerPawn to CHandle – sprawdzaj IsValid / Value
+                 if (!player.PlayerPawn.IsValid || player.PlayerPawn.Value == null)
+                     return;
+
+                 // Wczytaj zapisaną klasę z poprzednich rund.
+                 _classMenu?.ApplySavedClass(player);
+
+             });*/
+        }
+
+        private HookResult OnRoundStart(EventRoundStart ev, GameEventInfo info)
+        {
+            Logger.LogInformation("[DEBUG] Runda rozpoczęta - OnRoundStart");
+            // Okno wyboru klas tylko na starcie rundy.
+            _classSelectionOpen = true;
+            _selectedThisRound.Clear();
+
+            foreach (var runtime in _runtimeClasses.Values)
+            {
+                runtime.ResetRound();
+            }
+
+            return HookResult.Continue;
+        }
+
+        private HookResult OnEventFreezeEnd(EventRoundFreezeEnd ev, GameEventInfo info)
+        {
+            Logger.LogInformation("[DEBUG] Koniec czasu zamrożenia rundy - OnEventFreezeEnd");
+            // Zamknij okno wyboru klas po zakończeniu czasu zamrożenia.
+
+            _classSelectionOpen = false;
+            return HookResult.Continue;
+        }
+
+        private void OnClientDisconnect(int playerSlot)
+        {
+            // 🔑 KLUCZOWE: pozwól na restart przy następnym wejściu
+            _restartAllowed = true;
+
+            Logger.LogInformation(
+                "[DEBUG] Player left (slot {PlayerSlot})", playerSlot
+            );
+        }
+
+        private void OnClassApplied(CCSPlayerController player, ClassDefinition info)
+        {
+
+            if (!TryGetUserId(player, out var userId))
+            {
+                Logger.LogWarning("[WARN] Nie można przypisać klasy - brak UserId.");
+                return;
+            }
+
+            // 1️⃣ Oznacz, że gracz wybrał klasę w tej rundzie
+            _selectedThisRound.Add(player.UserId);
+
+            // 2️⃣ Pobierz ID klasy
+            var classId = info.Id;
+
+            // 3️⃣ Sprawdź, czy mamy zbindowane skille dla tej klasy
+            if (!_classSkillMap.TryGetValue(classId, out var skillDefinitions))
+            {
+                Logger.LogWarning(
+                    "[WARN] Brak skilli dla klasy '{ClassId}' (gracz {Player})",
+                    classId,
+                    player.PlayerName
+                );
+                skillDefinitions = [];
+            }
+
+            // 4️⃣ Utwórz runtime skille przez SkillFactory
+            var runtimeSkills = skillDefinitions
+                .Select(SkillFactory.CreateSkill)
+                .ToList();
+
+            // 5️⃣ Utwórz RuntimeClass
+            var runtimeClass = new RuntimeClass(
+                player.UserId,
+                classId,
+                runtimeSkills
+            );
+
+            // 6️⃣ Przypisz RuntimeClass do gracza (nadpisuje poprzednią, jeśli była)
+            _runtimeClasses[player.UserId] = runtimeClass;
+
+            Logger.LogInformation(
+                "[DEBUG] Przypisano klasę '{ClassId}' graczowi {Player} ({SkillCount} skilli)",
+                classId,
+                player.PlayerName,
+                runtimeSkills.Count
+            );
+        }
+
+
+
+        // === Balans drużyn / reset ===
+        private void EnsureBalancedTeam(CCSPlayerController player)
+        {
+            var players = Utilities.GetPlayers()
+                .Where(p => p != null && p.IsValid && !p.IsBot && p != player);
+
+            var ctCount = players.Count(p => p.Team == CsTeam.CounterTerrorist);
+            var ttCount = players.Count(p => p.Team == CsTeam.Terrorist);
+
+            CsTeam desiredTeam = CsTeam.Terrorist;
+
+            if (ttCount > ctCount)
+            {
+                desiredTeam = CsTeam.CounterTerrorist;
+            }
+
+            Logger.LogInformation("[INFO] Zmieniam druzyne gracza {PlayerName} na {DesiredTeam}", player.PlayerName, desiredTeam);
+            player.ChangeTeam(desiredTeam);
+        }
+
+        private void RestartIfNeeded()
+        {
+            int count = Utilities.GetPlayers()
+                .Count(p => p.IsValid &&
+                            !p.IsBot &&
+                            (p.Team == CsTeam.CounterTerrorist ||
+                             p.Team == CsTeam.Terrorist));
+
+            if (count == 1 || count == 2)
+                _restartAllowed = true;
+
+            if ((count == 1 || count == 2) && _restartAllowed)
+            {
+                _restartAllowed = false;
+
+                Logger.LogInformation("[FLOW] Restarting game for {PlayerCount} players", count);
+
+                Server.ExecuteCommand("mp_restartgame 1");
             }
         }
 
-        private List<ClassInfo> LoadClassesFromJson()
+        // === Wybór klas ===
+        private bool CanSelectClass(CCSPlayerController player)
         {
-            // pozostawione dla zgodności/komentarzy – logika przeniesiona do ClassConfigLoader
-            return ClassConfigLoader.LoadOrCreate(ModuleDirectory, Logger);
+            if (!TryGetUserId(player, out _))
+            {
+                player.PrintToChat("Brak poprawnego UserId - spróbuj ponownie za chwilę.");
+                return false;
+            }
+
+            if (!_classSelectionOpen)
+            {
+                player.PrintToChat("Wybór klasy jest możliwy tylko na początku rundy.");
+                return false;
+            }
+
+            if (_selectedThisRound.Contains(player.UserId))
+            {
+                player.PrintToChat("Klasa została już wybrana w tej rundzie.");
+                return false;
+            }
+
+            return true;
+        }
+
+        [ConsoleCommand("css_klasa", "Otwiera menu klas")]
+        public void CmdOpenClassMenu(CCSPlayerController? player, CommandInfo info)
+        {
+
+            if (player == null || !player.IsValid || player.IsBot)
+                return;
+
+            if (!_classMenu.HasApi())
+            {
+                Logger.LogInformation("[DEBUG] ClassMenuAPI nie udało sie pobrać");
+                return;
+            }
+
+            if (!CanSelectClass(player))
+            {
+                return;
+            }
+            _classMenu.ShowButtonClassMenu(player);
+        }
+
+        private void GrantItemsForRuntime(CCSPlayerController player,RuntimeClass runtime)
+        {
+            // self_heal → healthshot
+            if (runtime.GetSkill("self_heal") != null)
+            {
+                player.GiveNamedItem("weapon_healthshot");
+            }
+
+            // kolejne skille → kolejne itemy
+        }
+
+        [ConsoleCommand("css_test", "testowanie")]
+        public void CommandTest(CCSPlayerController? player, CommandInfo info)
+        {
+
+            if (!TryGetUserId(player, out var userId))
+            {
+                player.PrintToChat("Brak poprawnego UserId - spróbuj ponownie za chwilę.");
+                return;
+            }
+
+            if (player == null || !player.IsValid || player.IsBot)
+                return;
+
+            // 1️⃣ Czy gracz ma RuntimeClass?
+            if (!_runtimeClasses.TryGetValue(player.UserId, out var runtime))
+            {
+                player.PrintToChat("❌ Nie masz jeszcze wybranej klasy.");
+                return;
+            }
+
+            // 2️⃣ Czy klasa ma skill self_heal?
+            var skill = runtime.GetSkill("self_heal");
+            if (skill == null)
+            {
+                player.PrintToChat("❌ Twoja klasa nie posiada umiejętności samoleczenia.");
+                return;
+            }
+
+            // 3️⃣ Spróbuj użyć skilla
+            var success = skill.Use(player, player);
+
+            if (!success)
+            {
+                player.PrintToChat("⏳ Nie możesz teraz użyć tej umiejętności (cooldown lub brak użyć).");
+            }
+        }
+
+        private static bool TryGetUserId(CCSPlayerController player, out int userId)
+        {
+            userId = player.UserId ?? -1;
+            return userId >= 0;
         }
     }
 }
