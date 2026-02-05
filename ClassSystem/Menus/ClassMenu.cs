@@ -13,15 +13,15 @@ public sealed class ClassMenu
     private IMenuApi? _api;
     private ILogger? _logger;
 
-    private readonly Dictionary<int, string> _selectedClass = [];
+    private readonly Dictionary<ulong, string> _selectedClass = [];
     private readonly Dictionary<string, ClassDefinition> _classLookup = new(StringComparer.OrdinalIgnoreCase);
     private List<ClassDefinition> _classes = [];
-    public IReadOnlyDictionary<int, string> GetSelections() => _selectedClass;
+    public IReadOnlyDictionary<ulong, string> GetSelections() => _selectedClass;
     public bool HasClass(string classId) => _classLookup.ContainsKey(classId);
 
     public event Action<CCSPlayerController, ClassDefinition>? ClassApplied;
 
-    public bool TryGetSelectedClass(int steamId, out ClassDefinition? info)
+    public bool TryGetSelectedClass(ulong steamId, out ClassDefinition? info)
     {
         info = null;
 
@@ -157,7 +157,7 @@ public sealed class ClassMenu
         if (player == null || !player.IsValid)
             return;
 
-        var userId = player.UserId;
+        var userId = player.SteamID;
         _selectedClass[userId] = info.Id;
 
         ApplyClassEffects(player, info, true);
