@@ -1,4 +1,5 @@
 ﻿using ClassSystem.Configuration;
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Entities.Constants;
 using CounterStrikeSharp.API.Modules.Menu;
@@ -105,7 +106,8 @@ public sealed class ClassMenu
 
         foreach (var cls in _classes)
         {
-            string className = cls.Name;
+            var localCls = cls; // 🔑 KLUCZOWE
+            string className = localCls.Name;
             index++;
 
 
@@ -113,9 +115,12 @@ public sealed class ClassMenu
 
             menu.AddMenuOption(label, (p, option) =>
             {
-                ApplyClass(p, cls);
-
                 _api.CloseMenu(p);
+
+                Server.NextFrame(() =>
+                {
+                    ApplyClass(p, localCls);
+                });
             });
         }
 
@@ -154,6 +159,8 @@ public sealed class ClassMenu
 
     public void ApplyClass(CCSPlayerController player, ClassDefinition info)
     {
+        if (_logger == null) return;
+        _logger.LogWarning("[DEBUG] ApplyClass");
         if (player == null || !player.IsValid)
             return;
 
@@ -161,11 +168,14 @@ public sealed class ClassMenu
         _selectedClass[userId] = info.Id;
 
         ApplyClassEffects(player, info, true);
+        _logger.LogWarning("[DEBUG] PO ApplyClassEffects");
         ClassApplied?.Invoke(player, info);
     }
 
     private void ApplyClassEffects(CCSPlayerController player, ClassDefinition info, bool announce)
     {
+        if (_logger == null) return;
+        _logger.LogWarning("[DEBUG] ApplyClassEffects");
         if (player == null || !player.IsValid)
             return;
 
@@ -189,12 +199,14 @@ public sealed class ClassMenu
 
     private void ApplyStats(CCSPlayerPawn pawn, ClassStats stats)
     {
+        if (_logger == null) return;
+        _logger.LogWarning("[DEBUG] ApplyStats");
         pawn.MaxHealth = stats.Hp;
         pawn.Health = stats.Hp;
         pawn.VelocityModifier = stats.Speed;
     }
 
-   /* private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
+   private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
     {
         if (skills.Count == 0)
         {
@@ -209,46 +221,52 @@ public sealed class ClassMenu
         }
 
         _logger?.LogInformation("[DEBUG] Zastosowano umiejętności {Skills} dla gracza {Player}", string.Join(", ", skillIds), player.PlayerName);
-    }*/
+    }
 
     private void GiveLoadout(CCSPlayerController player, IReadOnlyCollection<string> loadout)
     {
-        if (loadout.Count == 0)
-        {
-            return;
-        }
+        if (_logger == null) return;
+        if (player == null || !player.IsValid || player.IsBot) return;
+        if (loadout == null || loadout.Count == 0) return;
+
+        // Snapshot listy (IReadOnlyCollection może być np. view z LINQ)
+        var items = loadout
+            .Select(NormalizeWeaponName)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .ToList();
+
+        _logger.LogInformation($"[DEBUG]GiveLoadout queued: {string.Join(", ", items)}");
 
         try
         {
-            player.RemoveWeapons();
+            //player.RemoveWeapons();
+            _logger.LogWarning( "[DEBUG] Usuwanie bronii");
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "[DEBUG] Nie udało się usunąć broni gracza {Player}", player.PlayerName);
+            _logger.LogWarning(ex, "[DEBUG] RemoveWeapons failed for {Player}", player.PlayerName);
+            // Nie kończymy — czasem i tak da się nadać itemy
         }
 
-        foreach (var weaponName in loadout)
+        /*foreach (var itemName in items)
         {
-            var normalizedName = NormalizeWeaponName(weaponName);
-            if (string.IsNullOrWhiteSpace(normalizedName))
-            {
-                continue;
-            }
-
             try
             {
-                player.GiveNamedItem(normalizedName);
-                _logger?.LogInformation("[DEBUG] Nadano {Weapon} graczowi {Player}", normalizedName, player.PlayerName);
+                player.GiveNamedItem(itemName);
+                _logger.LogInformation($"[DEBUG] Given {itemName} to {player.PlayerName}");
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "[DEBUG] Nie udało się nadać {Weapon} graczowi {Player}", normalizedName, player.PlayerName);
+                _logger.LogWarning(ex, "[DEBUG] Nie udało się nadać przedmiotu {Item} graczowi {Player}", itemName, player.PlayerName);
             }
-        }
+        }*/
     }
 
-    private static string NormalizeWeaponName(string weaponName)
+    private string NormalizeWeaponName(string weaponName)
     {
+        if (_logger == null) return string.Empty;
+        _logger.LogWarning($"[DEBUG] NormalizeWeaponName {weaponName}");
         if (string.IsNullOrWhiteSpace(weaponName))
         {
             return string.Empty;
