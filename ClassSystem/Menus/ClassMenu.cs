@@ -153,7 +153,7 @@ public sealed class ClassMenu
             return false;
         }
 
-        ApplyClassEffects(player, info, announce);
+        Server.NextFrame(() => ApplyClassEffects(player, info, announce));
         return true;
     }
 
@@ -167,9 +167,11 @@ public sealed class ClassMenu
         var userId = player.SteamID;
         _selectedClass[userId] = info.Id;
 
-        ApplyClassEffects(player, info, true);
-        _logger.LogWarning("[DEBUG] PO ApplyClassEffects");
-        ClassApplied?.Invoke(player, info);
+        Server.NextFrame(() =>
+        {
+            ApplyClassEffects(player, info, true);
+            ClassApplied?.Invoke(player, info);
+        });
     }
 
     private void ApplyClassEffects(CCSPlayerController player, ClassDefinition info, bool announce)
@@ -225,42 +227,83 @@ public sealed class ClassMenu
 
     private void GiveLoadout(CCSPlayerController player, IReadOnlyCollection<string> loadout)
     {
-        if (_logger == null) return;
-        if (player == null || !player.IsValid || player.IsBot) return;
-        if (loadout == null || loadout.Count == 0) return;
+        if (loadout.Count == 0)
+        {
+            return;
+        }
 
-        // Snapshot listy (IReadOnlyCollection może być np. view z LINQ)
-        var items = loadout
+        var normalizedLoadout = loadout
             .Select(NormalizeWeaponName)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct()
+            .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToList();
 
-        _logger.LogInformation($"[DEBUG]GiveLoadout queued: {string.Join(", ", items)}");
+        if (normalizedLoadout.Count == 0)
+        {
+            return;
+        }
+
+        Server.NextFrame(() => StartLoadoutApplication(player, normalizedLoadout));
+    }
+
+    private void StartLoadoutApplication(CCSPlayerController player, List<string> normalizedLoadout)
+    {
+        if (player == null || !player.IsValid)
+        {
+            return;
+        }
 
         try
         {
-            //player.RemoveWeapons();
-            _logger.LogWarning( "[DEBUG] Usuwanie bronii");
+            player.RemoveWeapons();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[DEBUG] RemoveWeapons failed for {Player}", player.PlayerName);
-            // Nie kończymy — czasem i tak da się nadać itemy
+            _logger?.LogWarning(ex, "[DEBUG] Nie udało się usunąć broni gracza {Player}", player.PlayerName);
         }
 
-        /*foreach (var itemName in items)
+            _logger?.LogInformation(
+                "[DEBUG] Zastosowano loadout ({ItemCount} itemy) dla gracza {Player}",
+                normalizedLoadout.Count,
+                player.PlayerName
+            );
+
+        var failedItems = new List<string>();
+        GiveLoadoutItem(player, normalizedLoadout, 0, failedItems);
+    }
+
+    private void GiveLoadoutItem(CCSPlayerController player, List<string> normalizedLoadout, int index, List<string> failedItems)
+    {
+        if (player == null || !player.IsValid)
         {
-            try
-            {
-                player.GiveNamedItem(itemName);
-                _logger.LogInformation($"[DEBUG] Given {itemName} to {player.PlayerName}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[DEBUG] Nie udało się nadać przedmiotu {Item} graczowi {Player}", itemName, player.PlayerName);
-            }
-        }*/
+            return;
+        }
+
+        if (index >= normalizedLoadout.Count)
+        {
+                if (failedItems.Count > 0)
+                {
+                    _logger?.LogWarning(
+                        "[DEBUG] Nie udało się nadać {FailedCount} itemów dla gracza {Player}: {FailedItems}",
+                        failedItems.Count,
+                        player.PlayerName,
+                        string.Join(", ", failedItems)
+                    );
+                }
+            return;
+        }
+
+        var itemName = normalizedLoadout[index];
+        try
+        {
+            player.GiveNamedItem(itemName);
+        }
+        catch (Exception ex)
+        {
+            failedItems.Add(itemName);
+            _logger?.LogWarning(ex, "[DEBUG] Nie udało się nadać {Weapon} graczowi {Player}", itemName, player.PlayerName);
+        }
+
+        Server.NextFrame(() => GiveLoadoutItem(player, normalizedLoadout, index + 1, failedItems));
     }
 
     private string NormalizeWeaponName(string weaponName)

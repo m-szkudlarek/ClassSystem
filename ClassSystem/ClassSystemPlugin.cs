@@ -49,6 +49,9 @@ namespace ClassSystem
         private bool _restartAllowed = true;
         private readonly Dictionary<int, ulong> _slotToSteamId = [];
         private int _classSelectionToken = 0;
+        private readonly Dictionary<int, SteamID> _authorizedSteamIds = [];
+        private readonly Dictionary<int, List<Action<SteamID>>> _pendingSteamActions = [];
+        private readonly HashSet<string> _steamIdWarnings = [];
 
 
         // === Skill constants ===
