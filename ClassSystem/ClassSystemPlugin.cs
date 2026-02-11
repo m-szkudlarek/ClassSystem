@@ -50,6 +50,8 @@ namespace ClassSystem
 
         // === Skill constants ===
         private const string MedicSelfHealSkill = "self_heal";
+
+        private const string DefaultClassId = "newbie";
         private readonly Dictionary<int, RuntimeClass> _runtimeClasses = [];
 
         // === Plugin lifecycle ===
@@ -119,7 +121,20 @@ namespace ClassSystem
             Logger.LogInformation($"[INFO] Gracz dołączył do serwera {player.PlayerName} (slot={playerSlot})");
 
             player.PrintToChat($"Witaj, {player.PlayerName}!");
+            EnsureDefaultClass(player);
             player.PrintToChat($"Wybierz klasę, komend !klasa ");
+
+            AddTimer(0.2f, () =>
+            {
+                if (!player.IsValid || player.IsBot)
+                    return;
+
+                if (player.Team is CsTeam.CounterTerrorist or CsTeam.Terrorist)
+                    return;
+
+                EnsureBalancedTeam(player);
+                RestartIfNeeded();
+            });
 
             var steamId = SteamIdSafe(player, nameof(OnClientPutInServer));
             if (steamId !=null)
@@ -142,20 +157,17 @@ namespace ClassSystem
 
         private HookResult OnJoinTeam(CCSPlayerController? player, CommandInfo info)
         {
-            /*Logger.LogInformation("[DEBUG] Gracz próbuje zmienić drużynę.");
+            Logger.LogInformation("[DEBUG] Gracz próbuje zmienić drużynę.");
             if (player == null || !player.IsValid || player.IsBot)
             {
                 return HookResult.Continue;
             }
 
-            Logger.LogInformation("[DEBUG] Gracz próbuje zmienić drużynę.Za ifem");
-            // Zablokuj ręczny wybór drużyny - wymuszamy balans.
+            Logger.LogInformation("[DEBUG] Wymuszam autobalans po jointeam.");
             EnsureBalancedTeam(player);
             RestartIfNeeded();
 
-            return HookResult.Handled;*/
-
-            return HookResult.Continue;
+            return HookResult.Handled;
         }
 
         // === Event handlers ===
@@ -241,6 +253,28 @@ namespace ClassSystem
             );
         }
 
+        private void EnsureDefaultClass(CCSPlayerController player)
+        {
+            if (!player.UserId.HasValue)
+            {
+                return;
+            }
+
+            if (_classMenu.TryGetSelectedClass(player.UserId.Value, out _))
+            {
+                return;
+            }
+
+            if (!_classMenu.TryApplyClass(player, DefaultClassId, out var classInfo) || classInfo == null)
+            {
+                Logger.LogWarning("[WARN] Nie udało się przypisać domyślnej klasy '{ClassId}' graczowi {Player}", DefaultClassId, player.PlayerName);
+                return;
+            }
+
+            _selectedThisRound.Remove(player.UserId.Value);
+            player.PrintToChat($"Przypisano domyślną klasę: {classInfo.Name}");
+        }
+
         private void OnClassApplied(CCSPlayerController player, ClassDefinition info)
         {
             Logger.LogInformation("OnClassApplied");
@@ -288,6 +322,52 @@ namespace ClassSystem
                 player.PlayerName,
                 runtimeSkills.Count
             );
+        }
+
+
+        // === Balans drużyn / reset ===
+        private void EnsureBalancedTeam(CCSPlayerController player)
+        {
+            var players = Utilities.GetPlayers()
+                .Where(p => p != null && p.IsValid && !p.IsBot && p != player);
+
+            var ctCount = players.Count(p => p.Team == CsTeam.CounterTerrorist);
+            var ttCount = players.Count(p => p.Team == CsTeam.Terrorist);
+
+            var desiredTeam = ttCount > ctCount
+                ? CsTeam.CounterTerrorist
+                : CsTeam.Terrorist;
+
+            if (player.Team == desiredTeam)
+                return;
+
+            Logger.LogInformation(
+                "[INFO] Zmieniam drużynę gracza {PlayerName} na {DesiredTeam}",
+                player.PlayerName,
+                desiredTeam
+            );
+
+            player.ChangeTeam(desiredTeam);
+        }
+
+        private void RestartIfNeeded()
+        {
+            var count = Utilities.GetPlayers()
+                .Count(p => p != null &&
+                            p.IsValid &&
+                            !p.IsBot &&
+                            (p.Team == CsTeam.CounterTerrorist || p.Team == CsTeam.Terrorist));
+
+            if (count is 1 or 2)
+                _restartAllowed = true;
+
+            if ((count is 1 or 2) && _restartAllowed)
+            {
+                _restartAllowed = false;
+
+                Logger.LogInformation("[FLOW] Restarting game for {PlayerCount} players", count);
+                Server.ExecuteCommand("mp_restartgame 1");
+            }
         }
 
 

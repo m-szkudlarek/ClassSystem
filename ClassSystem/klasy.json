@@ -5,6 +5,23 @@
 
 [
   // ------------------------------------------
+  // KLASA: STARTOWA – "NEWBIE"
+  // ROLA: Klasa domyślna
+  // ------------------------------------------
+  {
+    "id": "newbie",
+    "name": "Newbie",
+    "role": "Klasa domyślna",
+    "loadout": [ "Glock", "Knife" ],
+    "skills": [],
+    "stats": {
+      "hp": 100,
+      "speed": 1.00,
+      "damageMultiplier": 1.00
+    }
+  },
+
+  // ------------------------------------------
   // KLASA: KOMANDOS – "JOHN RAMBO"
   // ROLA: Heavy Assault / Close Combat
   // ------------------------------------------

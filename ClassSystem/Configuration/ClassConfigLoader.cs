@@ -112,6 +112,19 @@ public static class ClassConfigLoader
     [
         new ClassDefinition
         {
+            Id = "newbie",
+            Name = "Newbie",
+            Loadout = ["glock", "knife"],
+            Skills = [],
+            Stats = new ClassStats
+            {
+                Hp = 100,
+                Speed = 1.0f,
+                DamageMultiplier = 1.0f
+            }
+        },
+        new ClassDefinition
+        {
             Id = "rambo",
             Name = "Rambo",
             Loadout = ["negev", "scythe"],
