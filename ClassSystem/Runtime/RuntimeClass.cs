@@ -6,13 +6,13 @@ namespace ClassSystem.Runtime;
 
 public sealed class RuntimeClass
 {
-    public ulong UserId { get; }
+    public int UserId { get; }
     public string ClassId { get; }
 
     private readonly List<IClassSkill> _skills;
 
     public RuntimeClass(
-        ulong userId,
+        int userId,
         string classId,
         IEnumerable<IClassSkill> skills)
     {

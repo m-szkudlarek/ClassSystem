@@ -14,19 +14,19 @@ public sealed class ClassMenu
     private IMenuApi? _api;
     private ILogger? _logger;
 
-    private readonly Dictionary<ulong, string> _selectedClass = [];
+    private readonly Dictionary<int, string> _selectedClass = [];
     private readonly Dictionary<string, ClassDefinition> _classLookup = new(StringComparer.OrdinalIgnoreCase);
     private List<ClassDefinition> _classes = [];
-    public IReadOnlyDictionary<ulong, string> GetSelections() => _selectedClass;
+    public IReadOnlyDictionary<int, string> GetSelections() => _selectedClass;
     public bool HasClass(string classId) => _classLookup.ContainsKey(classId);
 
     public event Action<CCSPlayerController, ClassDefinition>? ClassApplied;
 
-    public bool TryGetSelectedClass(ulong steamId, out ClassDefinition? info)
+    public bool TryGetSelectedClass(int userId, out ClassDefinition? info)
     {
         info = null;
 
-        if (!_selectedClass.TryGetValue(steamId, out var classId))
+        if (!_selectedClass.TryGetValue(userId, out var classId))
         {
             return false;
         }
@@ -164,7 +164,13 @@ public sealed class ClassMenu
         if (player == null || !player.IsValid)
             return;
 
-        var userId = player.SteamID;
+        if (!player.UserId.HasValue)
+        {
+            _logger.LogWarning("[WARN] Brak UserId dla gracza {Player}. Nie można zapisać klasy.", player.PlayerName);
+            return;
+        }
+
+        var userId = player.UserId.Value;
         _selectedClass[userId] = info.Id;
 
         Server.NextFrame(() =>
@@ -339,7 +345,13 @@ public sealed class ClassMenu
 
     internal bool TryGetSelectedClass(int? userId, out ClassDefinition classInfo)
     {
-        throw new NotImplementedException();
+        classInfo = null!;
+        if (!userId.HasValue)
+        {
+            return false;
+        }
+
+        return TryGetSelectedClass(userId.Value, out classInfo);
     }
 }
 

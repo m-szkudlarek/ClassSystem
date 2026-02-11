@@ -8,17 +8,10 @@ using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Core.Capabilities;
 using CounterStrikeSharp.API.Modules.Commands;
-using CounterStrikeSharp.API.Modules.Cvars;
 using CounterStrikeSharp.API.Modules.Entities;
-using CounterStrikeSharp.API.Modules.Menu;
 using CounterStrikeSharp.API.Modules.Utils;
-using MenuManager;         // dla IMenuManager
+using MenuManager;
 using Microsoft.Extensions.Logging;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
-using static CounterStrikeSharp.API.Core.Listeners;
-using Vector = CounterStrikeSharp.API.Modules.Utils.Vector;
 
 namespace ClassSystem
 {
@@ -42,7 +35,7 @@ namespace ClassSystem
         private readonly HashSet<SteamID> _registered = [];  // “zarejestrowani w tej sesji”
         private readonly Dictionary<ulong, CsTeam> _pendingAutoTeam = []; //autobalans
         private bool _restartDoneForLowPlayers = false;
-        private readonly HashSet<ulong> _selectedThisRound = [];
+        private readonly HashSet<int> _selectedThisRound = [];
         private bool _classSelectionOpen;
         private const int FreezeTimeSeconds = 20;
         private const float ClassSelectionWindowSeconds = FreezeTimeSeconds;
@@ -52,11 +45,12 @@ namespace ClassSystem
         private readonly Dictionary<int, SteamID> _authorizedSteamIds = [];
         private readonly Dictionary<int, List<Action<SteamID>>> _pendingSteamActions = [];
         private readonly HashSet<string> _steamIdWarnings = [];
+        private bool _steamApiReady;
 
 
         // === Skill constants ===
         private const string MedicSelfHealSkill = "self_heal";
-        private readonly Dictionary<ulong, RuntimeClass> _runtimeClasses = [];
+        private readonly Dictionary<int, RuntimeClass> _runtimeClasses = [];
 
         // === Plugin lifecycle ===
         public override void Load(bool hotReload)
@@ -78,6 +72,8 @@ namespace ClassSystem
             RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
             RegisterEventHandler<EventRoundFreezeEnd>(OnEventFreezeEnd);
             RegisterListener<Listeners.OnClientDisconnect>(OnClientDisconnect);
+            RegisterListener<Listeners.OnGameServerSteamAPIActivated>(OnSteamApiActivated);
+            RegisterListener<Listeners.OnGameServerSteamAPIDeactivated>(OnSteamApiDeactivated);
 
 
             RegisterListener<Listeners.OnPlayerTakeDamagePre>(OnPlayerTakeDamagePre);
@@ -100,8 +96,12 @@ namespace ClassSystem
             _classMenu.SetApi(plugin);
         }
 
-        public void OnClientAuthorized(int playerSlot, SteamID steamId) {
+        public void OnClientAuthorized(int playerSlot, SteamID steamId)
+        {
             Logger.LogInformation($"[DEBUG] OnClientAuthorized");
+            _authorizedSteamIds[playerSlot] = steamId;
+            _slotToSteamId[playerSlot] = steamId.SteamId64;
+            DrainPendingSteamActions(playerSlot, steamId);
             if (_registered.Add(steamId))
             {
                 Logger.LogInformation($"[INFO] Zarejestrowano gracza: {steamId}");
@@ -109,7 +109,8 @@ namespace ClassSystem
             }
         }
 
-        public void OnClientPutInServer(int playerSlot) {
+        public void OnClientPutInServer(int playerSlot)
+        {
 
             var player = Utilities.GetPlayerFromSlot(playerSlot);
             if (player == null || !player.IsValid || player.IsBot)
@@ -120,6 +121,15 @@ namespace ClassSystem
             player.PrintToChat($"Witaj, {player.PlayerName}!");
             player.PrintToChat($"Wybierz klasę, komend !klasa ");
 
+            var steamId = SteamIdSafe(player, nameof(OnClientPutInServer));
+            if (steamId !=null)
+            {
+                _slotToSteamId[playerSlot] = steamId.SteamId64;
+            }
+            else
+            {
+                EnqueueSteamAction(playerSlot, id => _slotToSteamId[playerSlot] = id.SteamId64);
+            }
         }
 
         public void OnMapStart(string mapName)
@@ -165,7 +175,12 @@ namespace ClassSystem
                 return HookResult.Continue;
             }
 
-            if (!_classMenu.TryGetSelectedClass(attackerController.SteamID, out var classInfo) || classInfo == null)
+            if (!attackerController.UserId.HasValue)
+            {
+                return HookResult.Continue;
+            }
+
+            if (!_classMenu.TryGetSelectedClass(attackerController.UserId.Value, out var classInfo) || classInfo == null)
             {
                 return HookResult.Continue;
             }
@@ -206,6 +221,9 @@ namespace ClassSystem
 
         private void OnClientDisconnect(int playerSlot)
         {
+            _authorizedSteamIds.Remove(playerSlot);
+            _pendingSteamActions.Remove(playerSlot);
+
             // Sprawdź czy znamy ten slot
             if (!_slotToSteamId.TryGetValue(playerSlot, out var steamId))
             {
@@ -227,7 +245,13 @@ namespace ClassSystem
         {
             Logger.LogInformation("OnClassApplied");
             // 1️⃣ Oznacz, że gracz wybrał klasę w tej rundzie
-            _selectedThisRound.Add(player.SteamID);
+            if (!player.UserId.HasValue)
+            {
+                Logger.LogWarning("[WARN] Brak UserId dla gracza {Player}. Nie można przypisać klasy.", player.PlayerName);
+                return;
+            }
+
+            _selectedThisRound.Add(player.UserId.Value);
 
             // 2️⃣ Pobierz ID klasy
             var classId = info.Id;
@@ -250,13 +274,13 @@ namespace ClassSystem
 
             // 5️⃣ Utwórz RuntimeClass
             var runtimeClass = new RuntimeClass(
-                player.SteamID,
+                player.UserId.Value,
                 classId,
                 runtimeSkills
             );
 
             // 6️⃣ Przypisz RuntimeClass do gracza (nadpisuje poprzednią, jeśli była)
-            _runtimeClasses[player.SteamID] = runtimeClass;
+            _runtimeClasses[player.UserId.Value] = runtimeClass;
 
             Logger.LogInformation(
                 "[DEBUG] Przypisano klasę '{ClassId}' graczowi {Player} ({SkillCount} skilli)",
@@ -276,7 +300,13 @@ namespace ClassSystem
                 return false;
             }
 
-            if (_selectedThisRound.Contains(player.SteamID))
+            if (!player.UserId.HasValue)
+            {
+                player.PrintToChat("Brak UserId - spróbuj ponownie za chwilę.");
+                return false;
+            }
+
+            if (_selectedThisRound.Contains(player.UserId.Value))
             {
                 player.PrintToChat("Klasa została już wybrana w tej rundzie.");
                 return false;
@@ -306,7 +336,7 @@ namespace ClassSystem
             _classMenu.ShowButtonClassMenu(player);
         }
 
-        private void GrantItemsForRuntime(CCSPlayerController player,RuntimeClass runtime)
+        private void GrantItemsForRuntime(CCSPlayerController player, RuntimeClass runtime)
         {
             // self_heal → healthshot
             if (runtime.GetSkill("self_heal") != null)
@@ -325,7 +355,13 @@ namespace ClassSystem
                 return;
 
             // 1️⃣ Czy gracz ma RuntimeClass?
-            if (!_runtimeClasses.TryGetValue(player.SteamID, out var runtime))
+            if (!player.UserId.HasValue)
+            {
+                player.PrintToChat("❌ Brak UserId - spróbuj ponownie za chwilę.");
+                return;
+            }
+
+            if (!_runtimeClasses.TryGetValue(player.UserId.Value, out var runtime))
             {
                 player.PrintToChat("❌ Nie masz jeszcze wybranej klasy.");
                 return;
@@ -345,6 +381,88 @@ namespace ClassSystem
             if (!success)
             {
                 player.PrintToChat("⏳ Nie możesz teraz użyć tej umiejętności (cooldown lub brak użyć).");
+            }
+        }
+
+        private void OnSteamApiActivated()
+        {
+            _steamApiReady = true;
+            Logger.LogInformation("[DEBUG] SteamAPI activated.");
+            DrainAllPendingSteamActions();
+        }
+
+        private void OnSteamApiDeactivated()
+        {
+            _steamApiReady = false;
+            Logger.LogWarning("[DEBUG] SteamAPI deactivated.");
+        }
+
+        private SteamID? SteamIdSafe(CCSPlayerController? player, string where)
+        {
+            if (player == null || !player.IsValid)
+            {
+                return null;
+            }
+
+            if (_steamApiReady)
+            {
+                return player.AuthorizedSteamID;
+            }
+
+            var warningKey = $"{where}:{player.UserId}";
+            if (_steamIdWarnings.Add(warningKey))
+            {
+                Logger.LogWarning(
+                    "[STEAMAPI] Próba odczytu SteamID przed aktywacją SteamAPI w {Where} (slot={Slot}, userId={UserId}, name={Name})",
+                    where,
+                    player.Slot,
+                    player.UserId,
+                    player.PlayerName
+                );
+            }
+
+            return null;
+        }
+
+        private void EnqueueSteamAction(int playerSlot, Action<SteamID> action)
+        {
+            if (_steamApiReady && _authorizedSteamIds.TryGetValue(playerSlot, out var steamId))
+            {
+                action(steamId);
+                return;
+            }
+
+            if (!_pendingSteamActions.TryGetValue(playerSlot, out var actions))
+            {
+                actions = [];
+                _pendingSteamActions[playerSlot] = actions;
+            }
+
+            actions.Add(action);
+        }
+
+        private void DrainPendingSteamActions(int playerSlot, SteamID steamId)
+        {
+            if (!_pendingSteamActions.TryGetValue(playerSlot, out var actions))
+            {
+                return;
+            }
+
+            _pendingSteamActions.Remove(playerSlot);
+            foreach (var action in actions)
+            {
+                action(steamId);
+            }
+        }
+
+        private void DrainAllPendingSteamActions()
+        {
+            foreach (var pair in _pendingSteamActions.ToList())
+            {
+                if (_authorizedSteamIds.TryGetValue(pair.Key, out var steamId))
+                {
+                    DrainPendingSteamActions(pair.Key, steamId);
+                }
             }
         }
     }
