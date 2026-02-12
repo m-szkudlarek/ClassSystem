@@ -243,9 +243,15 @@ public sealed class ClassMenu
         }
 
         ApplyStats(pawn, info.Stats);
-        GiveLoadout(player, info.Loadout);
+
+        ushort? knifeDefinitionIndex = null;
+        if (TryGetKnifeDefinitionFromLoadout(info.Loadout, out var parsedKnifeDefinitionIndex))
+        {
+            knifeDefinitionIndex = parsedKnifeDefinitionIndex;
+        }
+
+        GiveLoadout(player, info.Loadout, knifeDefinitionIndex);
         GiveArmorAndHelmetItem(player, info);
-        EquipKnifeForClass(player, info.Loadout);
         //ApplySkills(player, info.Skills, announce);
 
         if (announce)
@@ -290,20 +296,6 @@ public sealed class ClassMenu
         {
             _logger?.LogWarning(ex, "[DEBUG] Nie udało się nadać itemu pancerza/hełmu {Item} graczowi {Player}.", itemName, player.PlayerName);
         }
-    }
-
-    private void EquipKnifeForClass(CCSPlayerController player, IReadOnlyCollection<string> loadout)
-    {
-        _logger?.LogInformation("[KNIFE_TRACE] Start EquipKnifeForClass for {Player}. Loadout: {Loadout}", player.PlayerName, string.Join(", ", loadout));
-
-        if (!TryGetKnifeDefinitionFromLoadout(loadout, out var itemDefinitionIndex))
-        {
-            _logger?.LogWarning("[KNIFE_TRACE] Brak noża w loadoucie gracza {Player}. Pomijam econ knife.", player.PlayerName);
-            return;
-        }
-
-        _logger?.LogInformation("[KNIFE_TRACE] Dla gracza {Player} wybrano ItemDefinitionIndex={DefinitionIndex}.", player.PlayerName, itemDefinitionIndex);
-        TryApplyKnifeWithRetries(player, itemDefinitionIndex, 6);
     }
 
     private void TryApplyKnifeWithRetries(CCSPlayerController player, ushort itemDefinitionIndex, int attemptsRemaining)
@@ -522,7 +514,7 @@ public sealed class ClassMenu
         _logger?.LogInformation("[DEBUG] Zastosowano umiejętności {Skills} dla gracza {Player}", string.Join(", ", skillIds), player.PlayerName);
     }
 
-    private void GiveLoadout(CCSPlayerController player, IReadOnlyCollection<string> loadout)
+    private void GiveLoadout(CCSPlayerController player, IReadOnlyCollection<string> loadout, ushort? knifeDefinitionIndex)
     {
         if (loadout.Count == 0)
         {
@@ -539,10 +531,10 @@ public sealed class ClassMenu
             return;
         }
 
-        Server.NextFrame(() => StartLoadoutApplication(player, normalizedLoadout));
+        Server.NextFrame(() => StartLoadoutApplication(player, normalizedLoadout, knifeDefinitionIndex));
     }
 
-    private void StartLoadoutApplication(CCSPlayerController player, List<string> normalizedLoadout)
+    private void StartLoadoutApplication(CCSPlayerController player, List<string> normalizedLoadout, ushort? knifeDefinitionIndex)
     {
         if (player == null || !player.IsValid)
         {
@@ -551,14 +543,14 @@ public sealed class ClassMenu
 
         if (player.Team == CsTeam.Terrorist && PlayerHasBomb(player))
         {
-            TryDropBomb(player, () => StartLoadoutApplicationInternal(player, normalizedLoadout));
+            TryDropBomb(player, () => StartLoadoutApplicationInternal(player, normalizedLoadout, knifeDefinitionIndex));
             return;
         }
 
-        StartLoadoutApplicationInternal(player, normalizedLoadout);
+        StartLoadoutApplicationInternal(player, normalizedLoadout, knifeDefinitionIndex);
     }
 
-    private void StartLoadoutApplicationInternal(CCSPlayerController player, List<string> normalizedLoadout)
+    private void StartLoadoutApplicationInternal(CCSPlayerController player, List<string> normalizedLoadout, ushort? knifeDefinitionIndex)
     {
         if (player == null || !player.IsValid)
         {
@@ -581,10 +573,10 @@ public sealed class ClassMenu
         );
 
         var failedItems = new List<string>();
-        GiveLoadoutItem(player, normalizedLoadout, 0, failedItems);
+        GiveLoadoutItem(player, normalizedLoadout, 0, failedItems, knifeDefinitionIndex);
     }
 
-    private void GiveLoadoutItem(CCSPlayerController player, List<string> normalizedLoadout, int index, List<string> failedItems)
+    private void GiveLoadoutItem(CCSPlayerController player, List<string> normalizedLoadout, int index, List<string> failedItems, ushort? knifeDefinitionIndex)
     {
         if (player == null || !player.IsValid)
         {
@@ -603,7 +595,11 @@ public sealed class ClassMenu
                 );
             }
 
-
+            if (knifeDefinitionIndex.HasValue)
+            {
+                _logger?.LogInformation("[KNIFE_TRACE] Loadout zakończony, aplikuję econ noża def={DefinitionIndex} dla {Player}", knifeDefinitionIndex.Value, player.PlayerName);
+                Server.NextFrame(() => TryApplyKnifeWithRetries(player, knifeDefinitionIndex.Value, 6));
+            }
 
             return;
         }
@@ -619,7 +615,7 @@ public sealed class ClassMenu
             _logger?.LogWarning(ex, "[DEBUG] Nie udało się nadać {Weapon} graczowi {Player}", itemName, player.PlayerName);
         }
 
-        Server.NextFrame(() => GiveLoadoutItem(player, normalizedLoadout, index + 1, failedItems));
+        Server.NextFrame(() => GiveLoadoutItem(player, normalizedLoadout, index + 1, failedItems, knifeDefinitionIndex));
     }
 
     private void TryDropBomb(CCSPlayerController player, Action onCompleted)
