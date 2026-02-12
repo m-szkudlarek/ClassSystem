@@ -33,6 +33,7 @@ namespace ClassSystem
         private Dictionary<string, List<SkillDefinition>> _classSkillMap = [];
 
         private readonly Dictionary<int, PlayerState> _players = [];
+        private readonly Dictionary<int, int> _spawnApplyTokens = [];
         private readonly Dictionary<ulong, CsTeam> _pendingAutoTeam = []; //autobalans
         private bool _restartDoneForLowPlayers = false;
         private bool _classSelectionOpen;
@@ -218,6 +219,46 @@ namespace ClassSystem
         private HookResult OnPlayerSpawn(EventPlayerSpawn ev, GameEventInfo info)
         {
             Logger.LogInformation("[DEBUG] Gracz odrodził się - OnPlayerSpawn");
+
+            var player = ev.Userid;
+            if (player == null || !player.IsValid)
+            {
+                return HookResult.Continue;
+            }
+
+            if (player.Team is not CsTeam.CounterTerrorist and not CsTeam.Terrorist)
+            {
+                return HookResult.Continue;
+            }
+
+            var token = 1;
+            if (_spawnApplyTokens.TryGetValue(player.Slot, out var currentToken))
+            {
+                token = currentToken + 1;
+            }
+
+            _spawnApplyTokens[player.Slot] = token;
+
+            AddTimer(0.15f, () =>
+            {
+                if (player == null || !player.IsValid)
+                {
+                    return;
+                }
+
+                if (!_spawnApplyTokens.TryGetValue(player.Slot, out var latestToken) || latestToken != token)
+                {
+                    return;
+                }
+
+                if (player.Team is not CsTeam.CounterTerrorist and not CsTeam.Terrorist)
+                {
+                    return;
+                }
+
+                _classMenu.ApplySavedClass(player);
+            });
+
             return HookResult.Continue;
         }
 
@@ -252,6 +293,7 @@ namespace ClassSystem
             }
 
             _players.Remove(playerSlot);
+            _spawnApplyTokens.Remove(playerSlot);
             // 🔑 KLUCZOWE: pozwól na restart przy następnym wejściu
             _restartAllowed = true;
 

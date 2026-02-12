@@ -16,6 +16,12 @@ public sealed class ClassDefinition
     [JsonPropertyName("skills")]
     public List<string> Skills { get; set; } = [];
 
+    [JsonPropertyName("armor")]
+    public int Armor { get; set; }
+
+    [JsonPropertyName("helmet")]
+    public bool Helmet { get; set; }
+
     [JsonIgnore]
     public int Hp
     {
