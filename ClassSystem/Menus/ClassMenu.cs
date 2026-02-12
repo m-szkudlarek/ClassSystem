@@ -294,11 +294,15 @@ public sealed class ClassMenu
 
     private void EquipKnifeForClass(CCSPlayerController player, IReadOnlyCollection<string> loadout)
     {
+        _logger?.LogInformation("[KNIFE_TRACE] Start EquipKnifeForClass for {Player}. Loadout: {Loadout}", player.PlayerName, string.Join(", ", loadout));
+
         if (!TryGetKnifeDefinitionFromLoadout(loadout, out var itemDefinitionIndex))
         {
+            _logger?.LogWarning("[KNIFE_TRACE] Brak noża w loadoucie gracza {Player}. Pomijam econ knife.", player.PlayerName);
             return;
         }
 
+        _logger?.LogInformation("[KNIFE_TRACE] Dla gracza {Player} wybrano ItemDefinitionIndex={DefinitionIndex}.", player.PlayerName, itemDefinitionIndex);
         TryApplyKnifeWithRetries(player, itemDefinitionIndex, 6);
     }
 
@@ -306,17 +310,21 @@ public sealed class ClassMenu
     {
         if (player == null || !player.IsValid || attemptsRemaining <= 0)
         {
+            _logger?.LogWarning("[KNIFE_TRACE] Przerwano retry noża. playerValid={IsValid}, attemptsRemaining={Attempts}", player?.IsValid, attemptsRemaining);
             return;
         }
 
+        _logger?.LogInformation("[KNIFE_TRACE] Próba ustawienia noża dla {Player}. attemptsRemaining={Attempts}, def={DefinitionIndex}", player.PlayerName, attemptsRemaining, itemDefinitionIndex);
         var knife = FindPlayerKnife(player);
 
         if (knife == null)
         {
+            _logger?.LogWarning("[KNIFE_TRACE] Nie znaleziono noża u gracza {Player}. attemptsRemaining={Attempts}", player.PlayerName, attemptsRemaining);
             if (attemptsRemaining == 6)
             {
                 try
                 {
+                    _logger?.LogInformation("[KNIFE_TRACE] Nadaję bazowy weapon_knife graczowi {Player}", player.PlayerName);
                     player.GiveNamedItem("weapon_knife");
                 }
                 catch (Exception ex)
@@ -331,6 +339,7 @@ public sealed class ClassMenu
 
         if (!TryApplyKnifeEcon(knife, player, itemDefinitionIndex))
         {
+            _logger?.LogWarning("[KNIFE_TRACE] TryApplyKnifeEcon zwrócił false dla {Player}. Przerywam dalsze próby.", player.PlayerName);
             return;
         }
 
@@ -368,6 +377,7 @@ public sealed class ClassMenu
             var weaponName = weapon.GetWeaponName();
             if (weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase) || string.Equals(weaponName, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
             {
+                _logger?.LogInformation("[KNIFE_TRACE] Znaleziono nóż encji {WeaponName} (index {WeaponIndex}) dla gracza {Player}", weaponName, weapon.Index, player.PlayerName);
                 return weapon;
             }
         }
@@ -386,6 +396,7 @@ public sealed class ClassMenu
             }
 
             var itemView = econEntity.AttributeManager.Item;
+            _logger?.LogInformation("[KNIFE_TRACE] Ustawiam ItemDefinitionIndex={DefinitionIndex} na weapon index={WeaponIndex} dla {Player}", itemDefinitionIndex, knife.Index, player.PlayerName);
             itemView.ItemDefinitionIndex = itemDefinitionIndex;
 
             Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
@@ -453,8 +464,11 @@ public sealed class ClassMenu
         {
             if (TryGetKnifeDefinitionIndex(rawItem, out itemDefinitionIndex))
             {
+                _logger?.LogInformation("[KNIFE_TRACE] Rozpoznano nóż z loadoutu: {RawItem} -> def={DefinitionIndex}", rawItem, itemDefinitionIndex);
                 return true;
             }
+
+            _logger?.LogInformation("[KNIFE_TRACE] Pozycja loadoutu nie jest nożem lub brak mapowania: {RawItem}", rawItem);
         }
 
         return false;
@@ -466,6 +480,7 @@ public sealed class ClassMenu
 
         if (string.IsNullOrWhiteSpace(weaponName))
         {
+            _logger?.LogInformation("[KNIFE_TRACE] Pusta nazwa broni w TryGetKnifeDefinitionIndex");
             return false;
         }
 
@@ -485,7 +500,9 @@ public sealed class ClassMenu
             compactName = compactName[..^3];
         }
 
-        return KnifeDefinitionIndexes.TryGetValue(compactName, out itemDefinitionIndex);
+        var result = KnifeDefinitionIndexes.TryGetValue(compactName, out itemDefinitionIndex);
+        _logger?.LogInformation("[KNIFE_TRACE] TryGetKnifeDefinitionIndex input={Input} compact={Compact} result={Result} def={DefinitionIndex}", weaponName, compactName, result, itemDefinitionIndex);
+        return result;
     }
 
    private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
