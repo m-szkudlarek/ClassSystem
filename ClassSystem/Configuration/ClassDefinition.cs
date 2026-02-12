@@ -22,6 +22,8 @@ public sealed class ClassDefinition
     [JsonPropertyName("helmet")]
     public bool Helmet { get; set; }
 
+    public string? Knife { get; set; }
+
     [JsonIgnore]
     public int Hp
     {
