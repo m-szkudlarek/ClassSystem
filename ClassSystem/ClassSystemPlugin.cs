@@ -219,7 +219,7 @@ namespace ClassSystem
         {
             Logger.LogInformation("[DEBUG] Gracz odrodził się - OnPlayerSpawn");
 
-            var player = Utilities.GetPlayerFromUserid(ev.Userid);
+            var player = ev.Userid;
             if (player == null || !player.IsValid)
             {
                 return HookResult.Continue;
