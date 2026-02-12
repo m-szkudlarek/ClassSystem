@@ -299,7 +299,7 @@ public sealed class ClassMenu
             return;
         }
 
-        TryApplyKnifeWithRetries(player, itemDefinitionIndex, 10);
+        TryApplyKnifeWithRetries(player, itemDefinitionIndex, 6);
     }
 
     private void TryApplyKnifeWithRetries(CCSPlayerController player, ushort itemDefinitionIndex, int attemptsRemaining)
@@ -313,7 +313,7 @@ public sealed class ClassMenu
 
         if (knife == null)
         {
-            if (attemptsRemaining == 10)
+            if (attemptsRemaining == 6)
             {
                 try
                 {
@@ -331,7 +331,6 @@ public sealed class ClassMenu
 
         if (!TryApplyKnifeEcon(knife, player, itemDefinitionIndex))
         {
-            Server.NextFrame(() => TryApplyKnifeWithRetries(player, itemDefinitionIndex, attemptsRemaining - 1));
             return;
         }
 
@@ -388,30 +387,21 @@ public sealed class ClassMenu
 
             var itemView = econEntity.AttributeManager.Item;
             itemView.ItemDefinitionIndex = itemDefinitionIndex;
-            itemView.EntityQuality = 3;
-
-            econEntity.FallbackPaintKit = 0;
-            econEntity.FallbackSeed = 0;
-            econEntity.FallbackWear = 0.0001f;
 
             Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
-            Utilities.SetStateChanged(knife, "CEconItemView", "m_iEntityQuality");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackPaintKit");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackSeed");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_flFallbackWear");
             Utilities.SetStateChanged(knife, "CEconEntity", "m_AttributeManager");
 
             _logger?.LogInformation(
-                "[KNIFE] StateChanged dla {Player} wywołane (def={DefinitionIndex}).",
-                player.PlayerName,
-                itemDefinitionIndex
+                "[KNIFE] Ustawiono ItemDefinitionIndex={DefinitionIndex} dla gracza {Player} i wywołano StateChanged.",
+                itemDefinitionIndex,
+                player.PlayerName
             );
 
             return true;
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "[KNIFE] Nie udało się ustawić econ noża dla gracza {Player}", player.PlayerName);
+            _logger?.LogWarning(ex, "[KNIFE] Nie udało się ustawić dozwolonego econ noża dla gracza {Player}", player.PlayerName);
             return false;
         }
     }
