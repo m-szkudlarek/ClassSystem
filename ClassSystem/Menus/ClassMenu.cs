@@ -223,13 +223,7 @@ public sealed class ClassMenu
             return;
         }
 
-        ushort? knifeDef = null;
-
-        if (!string.IsNullOrWhiteSpace(info.Knife) &&
-            KnifeDefinitions.TryGetValue(info.Knife, out var def))
-        {
-            knifeDef = def;
-        }
+        var knifeDef = ResolveKnifeDefinition(info);
 
         ApplyStats(pawn, info.Stats);
         GiveLoadout(player, info.Loadout);
@@ -366,6 +360,44 @@ public sealed class ClassMenu
         }
 
         Server.NextFrame(() => StartLoadoutApplication(player, normalizedLoadout));
+    }
+
+    private ushort? ResolveKnifeDefinition(ClassDefinition info)
+    {
+        if (string.IsNullOrWhiteSpace(info.Knife))
+        {
+            return null;
+        }
+
+        if (TryParseKnifeDefinition(info.Knife, out var knifeDef))
+        {
+            return knifeDef;
+        }
+
+        _logger?.LogWarning("[WARN] Klasa {ClassId} ma nieprawidłowy knife '{KnifeName}'.", info.Id, info.Knife);
+        return null;
+    }
+
+    private static bool TryParseKnifeDefinition(string knifeName, out ushort defIndex)
+    {
+        var lowered = knifeName.Trim().ToLowerInvariant();
+
+        if (KnifeDefinitions.TryGetValue(lowered, out defIndex))
+        {
+            return true;
+        }
+
+        if (lowered.StartsWith("weapon_", StringComparison.Ordinal))
+        {
+            lowered = lowered["weapon_".Length..];
+        }
+
+        if (KnifeDefinitions.TryGetValue(lowered, out defIndex))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private void StartLoadoutApplication(CCSPlayerController player, List<string> normalizedLoadout)
@@ -579,4 +611,3 @@ public sealed class ClassMenu
         return TryGetSelectedClass(userId.Value, out classInfo);
     }
 }
-

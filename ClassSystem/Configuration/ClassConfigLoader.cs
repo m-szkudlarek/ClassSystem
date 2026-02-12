@@ -105,6 +105,10 @@ public static class ClassConfigLoader
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToList();
 
+        classInfo.Knife = string.IsNullOrWhiteSpace(classInfo.Knife)
+            ? null
+            : classInfo.Knife.Trim();
+
         classInfo.Armor = Math.Clamp(classInfo.Armor, 0, 100);
         classInfo.Stats.Normalize();
     }
@@ -115,7 +119,8 @@ public static class ClassConfigLoader
         {
             Id = "newbie",
             Name = "Newbie",
-            Loadout = ["glock", "knife"],
+            Loadout = ["glock"],
+            Knife = "default",
             Skills = [],
             Armor = 0,
             Helmet = false,
