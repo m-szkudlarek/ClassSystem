@@ -59,6 +59,22 @@ public sealed class ClassMenu
         ["knifeskeleton"] = 525
     };
 
+
+    private static readonly Dictionary<ushort, string> KnifeEntityByDefinition = new()
+    {
+        [42] = "weapon_knife",
+        [500] = "weapon_bayonet",
+        [505] = "weapon_knife_flip",
+        [506] = "weapon_knife_gut",
+        [507] = "weapon_knife_karambit",
+        [508] = "weapon_knife_m9_bayonet",
+        [509] = "weapon_knife_tactical",
+        [512] = "weapon_knife_falchion",
+        [514] = "weapon_knife_survival_bowie",
+        [515] = "weapon_knife_butterfly",
+        [516] = "weapon_knife_push",
+        [525] = "weapon_knife_skeleton"
+    };
     private IMenuApi? _api;
     private ILogger? _logger;
 
@@ -307,7 +323,14 @@ public sealed class ClassMenu
         }
 
         _logger?.LogInformation("[KNIFE_TRACE] Próba ustawienia noża dla {Player}. attemptsRemaining={Attempts}, def={DefinitionIndex}", player.PlayerName, attemptsRemaining, itemDefinitionIndex);
-        var knife = FindPlayerKnife(player);
+
+        var preferredKnifeEntityName = GetKnifeEntityName(itemDefinitionIndex);
+        if (attemptsRemaining == 6 && !string.IsNullOrWhiteSpace(preferredKnifeEntityName) && !string.Equals(preferredKnifeEntityName, "weapon_knife", StringComparison.OrdinalIgnoreCase))
+        {
+            TryGivePreferredKnifeEntity(player, preferredKnifeEntityName);
+        }
+
+        var knife = FindPlayerKnife(player, preferredKnifeEntityName);
 
         if (knife == null)
         {
@@ -344,7 +367,7 @@ public sealed class ClassMenu
         );
     }
 
-    private CBasePlayerWeapon? FindPlayerKnife(CCSPlayerController player)
+    private CBasePlayerWeapon? FindPlayerKnife(CCSPlayerController player, string? preferredKnifeEntityName = null)
     {
         var pawn = player.PlayerPawn.Value;
         if (pawn == null || !player.PlayerPawn.IsValid)
@@ -358,6 +381,8 @@ public sealed class ClassMenu
             return null;
         }
 
+        CBasePlayerWeapon? fallbackKnife = null;
+
         foreach (var weaponHandle in weaponServices.MyWeapons)
         {
             var weapon = weaponHandle.Value;
@@ -367,14 +392,47 @@ public sealed class ClassMenu
             }
 
             var weaponName = weapon.GetWeaponName();
-            if (weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase) || string.Equals(weaponName, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
+            if (!weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase) && !string.Equals(weaponName, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
             {
-                _logger?.LogInformation("[KNIFE_TRACE] Znaleziono nóż encji {WeaponName} (index {WeaponIndex}) dla gracza {Player}", weaponName, weapon.Index, player.PlayerName);
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(preferredKnifeEntityName) && string.Equals(weaponName, preferredKnifeEntityName, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger?.LogInformation("[KNIFE_TRACE] Znaleziono preferowany nóż encji {WeaponName} (index {WeaponIndex}) dla gracza {Player}", weaponName, weapon.Index, player.PlayerName);
                 return weapon;
             }
+
+            fallbackKnife ??= weapon;
         }
 
-        return null;
+        if (fallbackKnife != null)
+        {
+            _logger?.LogInformation("[KNIFE_TRACE] Znaleziono fallback nóż encji {WeaponName} (index {WeaponIndex}) dla gracza {Player}", fallbackKnife.GetWeaponName(), fallbackKnife.Index, player.PlayerName);
+        }
+
+        return fallbackKnife;
+    }
+
+
+    private string GetKnifeEntityName(ushort itemDefinitionIndex)
+    {
+        return KnifeEntityByDefinition.TryGetValue(itemDefinitionIndex, out var entityName)
+            ? entityName
+            : "weapon_knife";
+    }
+
+    private void TryGivePreferredKnifeEntity(CCSPlayerController player, string preferredKnifeEntityName)
+    {
+        try
+        {
+            _logger?.LogInformation("[KNIFE_TRACE] Próbuję nadać preferowaną encję noża {WeaponName} graczowi {Player}", preferredKnifeEntityName, player.PlayerName);
+            player.GiveNamedItem(preferredKnifeEntityName);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[KNIFE_TRACE] Nie udało się nadać preferowanej encji noża {WeaponName} graczowi {Player}", preferredKnifeEntityName, player.PlayerName);
+        }
     }
 
     private bool TryApplyKnifeEcon(CBasePlayerWeapon knife, CCSPlayerController player, ushort itemDefinitionIndex)
