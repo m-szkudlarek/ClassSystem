@@ -2,6 +2,7 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Entities.Constants;
+using CounterStrikeSharp.API.Modules.Extensions;
 using CounterStrikeSharp.API.Modules.Menu;
 using CounterStrikeSharp.API.Modules.Utils;
 using MenuManager;
@@ -258,6 +259,22 @@ public sealed class ClassMenu
             return;
         }
 
+        if (player.Team == CsTeam.Terrorist && PlayerHasBomb(player))
+        {
+            TryDropBomb(player, () => StartLoadoutApplicationInternal(player, normalizedLoadout));
+            return;
+        }
+
+        StartLoadoutApplicationInternal(player, normalizedLoadout);
+    }
+
+    private void StartLoadoutApplicationInternal(CCSPlayerController player, List<string> normalizedLoadout)
+    {
+        if (player == null || !player.IsValid)
+        {
+            return;
+        }
+
         try
         {
             player.RemoveWeapons();
@@ -267,11 +284,11 @@ public sealed class ClassMenu
             _logger?.LogWarning(ex, "[DEBUG] Nie udało się usunąć broni gracza {Player}", player.PlayerName);
         }
 
-            _logger?.LogInformation(
-                "[DEBUG] Zastosowano loadout ({ItemCount} itemy) dla gracza {Player}",
-                normalizedLoadout.Count,
-                player.PlayerName
-            );
+        _logger?.LogInformation(
+            "[DEBUG] Zastosowano loadout ({ItemCount} itemy) dla gracza {Player}",
+            normalizedLoadout.Count,
+            player.PlayerName
+        );
 
         var failedItems = new List<string>();
         GiveLoadoutItem(player, normalizedLoadout, 0, failedItems);
@@ -286,15 +303,18 @@ public sealed class ClassMenu
 
         if (index >= normalizedLoadout.Count)
         {
-                if (failedItems.Count > 0)
-                {
-                    _logger?.LogWarning(
-                        "[DEBUG] Nie udało się nadać {FailedCount} itemów dla gracza {Player}: {FailedItems}",
-                        failedItems.Count,
-                        player.PlayerName,
-                        string.Join(", ", failedItems)
-                    );
-                }
+            if (failedItems.Count > 0)
+            {
+                _logger?.LogWarning(
+                    "[DEBUG] Nie udało się nadać {FailedCount} itemów dla gracza {Player}: {FailedItems}",
+                    failedItems.Count,
+                    player.PlayerName,
+                    string.Join(", ", failedItems)
+                );
+            }
+
+
+
             return;
         }
 
@@ -310,6 +330,95 @@ public sealed class ClassMenu
         }
 
         Server.NextFrame(() => GiveLoadoutItem(player, normalizedLoadout, index + 1, failedItems));
+    }
+
+    private void TryDropBomb(CCSPlayerController player, Action onCompleted)
+    {
+        try
+        {
+            player.ExecuteClientCommandFromServer("slot5");
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[DEBUG] Nie udało się przełączyć gracza {Player} na slot bomby.", player.PlayerName);
+        }
+
+        Server.NextFrame(() =>
+        {
+            if (player == null || !player.IsValid || player.Team != CsTeam.Terrorist)
+            {
+                onCompleted();
+                return;
+            }
+
+            if (!PlayerHasBomb(player))
+            {
+                onCompleted();
+                return;
+            }
+
+            try
+            {
+                player.DropActiveWeapon();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "[DEBUG] Nie udało się zrzucić aktywnej broni gracza {Player}.", player.PlayerName);
+            }
+
+            if (PlayerHasBomb(player))
+            {
+                try
+                {
+                    player.ExecuteClientCommandFromServer("drop");
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "[DEBUG] Nie udało się wykonać komendy drop dla gracza {Player}.", player.PlayerName);
+                }
+            }
+
+            onCompleted();
+        });
+    }
+
+
+    private bool PlayerHasBomb(CCSPlayerController player)
+    {
+        try
+        {
+            var pawn = player.PlayerPawn.Value;
+            if (pawn == null || !player.PlayerPawn.IsValid)
+            {
+                return false;
+            }
+
+            var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
+            if (weaponServices == null)
+            {
+                return false;
+            }
+
+            foreach (var weaponHandle in weaponServices.MyWeapons)
+            {
+                var weapon = weaponHandle.Value;
+                if (weapon == null || !weapon.IsValid)
+                {
+                    continue;
+                }
+
+                if (string.Equals(weapon.GetWeaponName(), "weapon_c4", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[DEBUG] Nie udało się sprawdzić, czy gracz {Player} ma C4.", player.PlayerName);
+        }
+
+        return false;
     }
 
     private string NormalizeWeaponName(string weaponName)

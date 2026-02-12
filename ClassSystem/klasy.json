@@ -4,6 +4,24 @@
 // ==========================================
 
 [
+
+  // ------------------------------------------
+  // KLASA: STARTOWA – "NEWBIE"
+  // ROLA: Klasa domyślna
+  // ------------------------------------------
+  {
+    "id": "newbie",
+    "name": "Newbie",
+    "role": "Klasa domyślna",
+    "loadout": [ "Glock", "Knife" ],
+    "skills": [],
+    "stats": {
+      "hp": 100,
+      "speed": 1.00,
+      "damageMultiplier": 1.00
+    }
+  },
+
   // ------------------------------------------
   // KLASA: KOMANDOS – "JOHN RAMBO"
   // ROLA: Heavy Assault / Close Combat
@@ -115,15 +133,15 @@
     "name": "Desmond Doss",
     "role": "Support / Team Sustain",
     "loadout": [ "GalilAR" ],
-    "skills": ["self_heal"],
+    "skills": [ "self_heal" ],
     "stats": {
       "hp": 120,
       "speed": 1.00,
       "damageMultiplier": 0.95
     }
   },
-  
-  
+
+
 
   // ------------------------------------------
   // KLASA: PREMIUM – "JOHNNY SILVERHAND"
