@@ -218,6 +218,23 @@ namespace ClassSystem
         private HookResult OnPlayerSpawn(EventPlayerSpawn ev, GameEventInfo info)
         {
             Logger.LogInformation("[DEBUG] Gracz odrodził się - OnPlayerSpawn");
+
+            var player = Utilities.GetPlayerFromUserid(ev.Userid);
+            if (player == null || !player.IsValid)
+            {
+                return HookResult.Continue;
+            }
+
+            AddTimer(0.1f, () =>
+            {
+                if (player == null || !player.IsValid)
+                {
+                    return;
+                }
+
+                _classMenu.ApplySavedClass(player);
+            });
+
             return HookResult.Continue;
         }
 

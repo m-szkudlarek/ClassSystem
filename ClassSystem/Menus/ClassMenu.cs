@@ -12,6 +12,53 @@ namespace ClassSystem.Menus;
 
 public sealed class ClassMenu
 {
+    private static readonly Dictionary<string, string> WeaponAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["knife"] = "weapon_knife",
+        ["karambit"] = "weapon_knife",
+        ["knifekarambit"] = "weapon_knife",
+        ["knifebutterfly"] = "weapon_knife",
+        ["butterfly"] = "weapon_knife",
+        ["knifeflip"] = "weapon_knife",
+        ["flip"] = "weapon_knife",
+        ["knifem9bayonet"] = "weapon_knife",
+        ["m9bayonet"] = "weapon_knife",
+        ["bayonet"] = "weapon_knife",
+        ["knifeskeleton"] = "weapon_knife",
+        ["skeleton"] = "weapon_knife",
+        ["knifetactical"] = "weapon_knife",
+        ["tactical"] = "weapon_knife",
+        ["knifesurvivalbowie"] = "weapon_knife",
+        ["survivalbowie"] = "weapon_knife"
+    };
+
+    private static readonly Dictionary<string, ushort> KnifeDefinitionIndexes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["knife"] = 42,
+        ["karambit"] = 507,
+        ["knifekarambit"] = 507,
+        ["m9bayonet"] = 508,
+        ["knifem9bayonet"] = 508,
+        ["bayonet"] = 500,
+        ["flip"] = 505,
+        ["knifeflip"] = 505,
+        ["gut"] = 506,
+        ["knifegut"] = 506,
+        ["tactical"] = 509,
+        ["knifetactical"] = 509,
+        ["falchion"] = 512,
+        ["knifefalchion"] = 512,
+        ["survivalbowie"] = 514,
+        ["bowie"] = 514,
+        ["knifesurvivalbowie"] = 514,
+        ["butterfly"] = 515,
+        ["knifebutterfly"] = 515,
+        ["shadowdaggers"] = 516,
+        ["daggers"] = 516,
+        ["skeleton"] = 525,
+        ["knifeskeleton"] = 525
+    };
+
     private IMenuApi? _api;
     private ILogger? _logger;
 
@@ -197,6 +244,8 @@ public sealed class ClassMenu
 
         ApplyStats(pawn, info.Stats);
         GiveLoadout(player, info.Loadout);
+        GiveArmorAndHelmetItem(player, info);
+        EquipKnifeForClass(player, info.Loadout);
         //ApplySkills(player, info.Skills, announce);
 
         if (announce)
@@ -213,6 +262,240 @@ public sealed class ClassMenu
         pawn.MaxHealth = stats.Hp;
         pawn.Health = stats.Hp;
         pawn.VelocityModifier = stats.Speed;
+    }
+
+    private void GiveArmorAndHelmetItem(CCSPlayerController player, ClassDefinition classInfo)
+    {
+        if (player == null || !player.IsValid)
+        {
+            return;
+        }
+
+        var itemName = classInfo.Helmet
+            ? "item_assaultsuit"
+            : classInfo.Armor > 0
+                ? "item_kevlar"
+                : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(itemName))
+        {
+            return;
+        }
+
+        try
+        {
+            player.GiveNamedItem(itemName);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[DEBUG] Nie udało się nadać itemu pancerza/hełmu {Item} graczowi {Player}.", itemName, player.PlayerName);
+        }
+    }
+
+    private void EquipKnifeForClass(CCSPlayerController player, IReadOnlyCollection<string> loadout)
+    {
+        if (!TryGetKnifeDefinitionFromLoadout(loadout, out var itemDefinitionIndex))
+        {
+            return;
+        }
+
+        TryApplyKnifeWithRetries(player, itemDefinitionIndex, 10);
+    }
+
+    private void TryApplyKnifeWithRetries(CCSPlayerController player, ushort itemDefinitionIndex, int attemptsRemaining)
+    {
+        if (player == null || !player.IsValid || attemptsRemaining <= 0)
+        {
+            return;
+        }
+
+        var knife = FindPlayerKnife(player);
+
+        if (knife == null)
+        {
+            if (attemptsRemaining == 10)
+            {
+                try
+                {
+                    player.GiveNamedItem("weapon_knife");
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "[DEBUG] Nie udało się nadać bazowego noża graczowi {Player}", player.PlayerName);
+                }
+            }
+
+            Server.NextFrame(() => TryApplyKnifeWithRetries(player, itemDefinitionIndex, attemptsRemaining - 1));
+            return;
+        }
+
+        if (!TryApplyKnifeEcon(knife, player, itemDefinitionIndex))
+        {
+            Server.NextFrame(() => TryApplyKnifeWithRetries(player, itemDefinitionIndex, attemptsRemaining - 1));
+            return;
+        }
+
+        RemoveExtraKnives(player, knife);
+
+        _logger?.LogInformation(
+            "[KNIFE] Gracz {Player} dostał nóż ItemDefinitionIndex={DefinitionIndex}.",
+            player.PlayerName,
+            itemDefinitionIndex
+        );
+    }
+
+    private CBasePlayerWeapon? FindPlayerKnife(CCSPlayerController player)
+    {
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !player.PlayerPawn.IsValid)
+        {
+            return null;
+        }
+
+        var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
+        if (weaponServices == null)
+        {
+            return null;
+        }
+
+        foreach (var weaponHandle in weaponServices.MyWeapons)
+        {
+            var weapon = weaponHandle.Value;
+            if (weapon == null || !weapon.IsValid)
+            {
+                continue;
+            }
+
+            var weaponName = weapon.GetWeaponName();
+            if (weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase) || string.Equals(weaponName, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
+            {
+                return weapon;
+            }
+        }
+
+        return null;
+    }
+
+    private bool TryApplyKnifeEcon(CBasePlayerWeapon knife, CCSPlayerController player, ushort itemDefinitionIndex)
+    {
+        try
+        {
+            var econEntity = knife.As<CEconEntity>();
+            if (econEntity == null || !econEntity.IsValid)
+            {
+                return false;
+            }
+
+            var itemView = econEntity.AttributeManager.Item;
+            itemView.ItemDefinitionIndex = itemDefinitionIndex;
+            itemView.EntityQuality = 3;
+
+            econEntity.FallbackPaintKit = 0;
+            econEntity.FallbackSeed = 0;
+            econEntity.FallbackWear = 0.0001f;
+
+            Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
+            Utilities.SetStateChanged(knife, "CEconItemView", "m_iEntityQuality");
+            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackPaintKit");
+            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackSeed");
+            Utilities.SetStateChanged(knife, "CEconEntity", "m_flFallbackWear");
+            Utilities.SetStateChanged(knife, "CEconEntity", "m_AttributeManager");
+
+            _logger?.LogInformation(
+                "[KNIFE] StateChanged dla {Player} wywołane (def={DefinitionIndex}).",
+                player.PlayerName,
+                itemDefinitionIndex
+            );
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[KNIFE] Nie udało się ustawić econ noża dla gracza {Player}", player.PlayerName);
+            return false;
+        }
+    }
+
+    private void RemoveExtraKnives(CCSPlayerController player, CBasePlayerWeapon keepKnife)
+    {
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !player.PlayerPawn.IsValid)
+        {
+            return;
+        }
+
+        var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
+        if (weaponServices == null)
+        {
+            return;
+        }
+
+        foreach (var weaponHandle in weaponServices.MyWeapons)
+        {
+            var weapon = weaponHandle.Value;
+            if (weapon == null || !weapon.IsValid || weapon.EntityIndex == keepKnife.EntityIndex)
+            {
+                continue;
+            }
+
+            var weaponName = weapon.GetWeaponName();
+            if (!weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase) && !string.Equals(weaponName, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            try
+            {
+                pawn.RemovePlayerItem(weapon);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "[KNIFE] Nie udało się usunąć nadmiarowego noża gracza {Player}", player.PlayerName);
+            }
+        }
+    }
+
+    private bool TryGetKnifeDefinitionFromLoadout(IReadOnlyCollection<string> loadout, out ushort itemDefinitionIndex)
+    {
+        itemDefinitionIndex = 0;
+
+        foreach (var rawItem in loadout)
+        {
+            if (TryGetKnifeDefinitionIndex(rawItem, out itemDefinitionIndex))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryGetKnifeDefinitionIndex(string? weaponName, out ushort itemDefinitionIndex)
+    {
+        itemDefinitionIndex = 0;
+
+        if (string.IsNullOrWhiteSpace(weaponName))
+        {
+            return false;
+        }
+
+        var compactName = weaponName.Trim()
+            .Replace("-", "", StringComparison.Ordinal)
+            .Replace("_", "", StringComparison.Ordinal)
+            .Replace(" ", "", StringComparison.Ordinal)
+            .ToLowerInvariant();
+
+        if (compactName.StartsWith("weapon", StringComparison.Ordinal))
+        {
+            compactName = compactName[6..];
+        }
+
+        if (compactName.EndsWith("ag2", StringComparison.Ordinal))
+        {
+            compactName = compactName[..^3];
+        }
+
+        return KnifeDefinitionIndexes.TryGetValue(compactName, out itemDefinitionIndex);
     }
 
    private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
@@ -430,9 +713,32 @@ public sealed class ClassMenu
             return string.Empty;
         }
 
-        var compactName = weaponName.Replace("-", "", StringComparison.Ordinal)
+        var trimmed = weaponName.Trim();
+        var compactName = trimmed.Replace("-", "", StringComparison.Ordinal)
             .Replace("_", "", StringComparison.Ordinal)
             .Replace(" ", "", StringComparison.Ordinal);
+
+        if (trimmed.Contains("_ag2", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("knife", StringComparison.OrdinalIgnoreCase))
+        {
+            return "weapon_knife";
+        }
+
+        if (WeaponAliases.TryGetValue(compactName, out var aliasWeapon))
+        {
+            return aliasWeapon;
+        }
+
+        if (trimmed.StartsWith("weapon_knife", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
+        {
+            return "weapon_knife";
+        }
+
+        if (trimmed.StartsWith("weapon_", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("item_", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed.ToLowerInvariant();
+        }
 
         if (Enum.TryParse<CsItem>(compactName, true, out var csItem))
         {
@@ -443,13 +749,16 @@ public sealed class ClassMenu
             }
         }
 
-        var lowered = compactName.ToLowerInvariant();
-        if (!lowered.StartsWith("weapon_", StringComparison.Ordinal) && !lowered.StartsWith("item_", StringComparison.Ordinal))
+        var snakeCase = trimmed.ToLowerInvariant()
+            .Replace("-", "_", StringComparison.Ordinal)
+            .Replace(" ", "_", StringComparison.Ordinal);
+
+        if (!snakeCase.StartsWith("weapon_", StringComparison.Ordinal) && !snakeCase.StartsWith("item_", StringComparison.Ordinal))
         {
-            lowered = $"weapon_{lowered}";
+            snakeCase = $"weapon_{snakeCase}";
         }
 
-        return lowered;
+        return snakeCase;
     }
 
     internal bool TryGetSelectedClass(int? userId, out ClassDefinition classInfo)

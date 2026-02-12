@@ -105,6 +105,7 @@ public static class ClassConfigLoader
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToList();
 
+        classInfo.Armor = Math.Clamp(classInfo.Armor, 0, 100);
         classInfo.Stats.Normalize();
     }
 
@@ -116,6 +117,8 @@ public static class ClassConfigLoader
             Name = "Newbie",
             Loadout = ["glock", "knife"],
             Skills = [],
+            Armor = 0,
+            Helmet = false,
             Stats = new ClassStats
             {
                 Hp = 100,
