@@ -423,7 +423,7 @@ public sealed class ClassMenu
         foreach (var weaponHandle in weaponServices.MyWeapons)
         {
             var weapon = weaponHandle.Value;
-            if (weapon == null || !weapon.IsValid || weapon.EntityIndex == keepKnife.EntityIndex)
+            if (weapon == null || !weapon.IsValid || weapon.Index == keepKnife.Index)
             {
                 continue;
             }
