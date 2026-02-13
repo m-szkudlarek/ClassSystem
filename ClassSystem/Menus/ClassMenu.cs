@@ -356,8 +356,15 @@ public sealed class ClassMenu
         {
             if (attemptsRemaining == 8)
             {
-                _logger?.LogInformation("[FLOW-KNIFE] Giving knife entity={KnifeEntity} to player={Player} before applying defIndex={DefIndex}.", knifeEntityName, player.PlayerName, defIndex);
-                player.GiveNamedItem(knifeEntityName);
+                _logger?.LogInformation("[FLOW-KNIFE] Giving preferred knife entity={KnifeEntity} to player={Player} before applying defIndex={DefIndex}.", knifeEntityName, player.PlayerName, defIndex);
+                TryGiveKnifeEntity(player, knifeEntityName);
+            }
+
+            // Fallback: część serwerów akceptuje tylko bazowy weapon_knife.
+            if (attemptsRemaining == 6 || attemptsRemaining == 3)
+            {
+                _logger?.LogInformation("[FLOW-KNIFE] Fallback give base knife for player={Player}, attemptsRemaining={Attempts}.", player.PlayerName, attemptsRemaining);
+                TryGiveKnifeEntity(player, "weapon_knife");
             }
 
             Server.NextFrame(() => TryApplyKnifeWithRetries(player, defIndex, knifeEntityName, attemptsRemaining - 1));
@@ -372,6 +379,18 @@ public sealed class ClassMenu
 
         player.ExecuteClientCommandFromServer("slot3");
         Server.NextFrame(() => player.ExecuteClientCommandFromServer("slot3"));
+    }
+
+    private void TryGiveKnifeEntity(CCSPlayerController player, string knifeEntityName)
+    {
+        try
+        {
+            player.GiveNamedItem(knifeEntityName);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed to give knife entity={KnifeEntity} for player={Player}.", knifeEntityName, player.PlayerName);
+        }
     }
 
     private CBasePlayerWeapon? FindPlayerKnife(CCSPlayerController player)
