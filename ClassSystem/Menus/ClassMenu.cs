@@ -303,6 +303,17 @@ public sealed class ClassMenu
             return;
         }
 
+        TryApplyKnifeWithRetries(player, defIndex, 8);
+    }
+
+    private void TryApplyKnifeWithRetries(CCSPlayerController player, ushort defIndex, int attemptsRemaining)
+    {
+        if (player == null || !player.IsValid || attemptsRemaining <= 0)
+        {
+            _logger?.LogWarning("[FLOW-KNIFE] Knife apply aborted for player={Player}, attemptsRemaining={Attempts}.", player?.PlayerName ?? "<null>", attemptsRemaining);
+            return;
+        }
+
         var pawn = player.PlayerPawn.Value;
         if (pawn == null || !player.PlayerPawn.IsValid)
         {
@@ -310,42 +321,95 @@ public sealed class ClassMenu
             return;
         }
 
-        _logger?.LogInformation("[FLOW-KNIFE] Giving base knife to player={Player} before applying defIndex={DefIndex}.", player.PlayerName, defIndex);
-        // zawsze daj bazowy knife
-        player.GiveNamedItem("weapon_knife");
-
-        Server.NextFrame(() =>
+        var knife = FindPlayerKnife(player);
+        if (knife == null)
         {
-            var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
-            if (weaponServices == null)
+            if (attemptsRemaining == 8)
             {
-                _logger?.LogWarning("[FLOW-KNIFE] WeaponServices unavailable for player={Player}.", player.PlayerName);
-                return;
+                _logger?.LogInformation("[FLOW-KNIFE] Giving base knife to player={Player} before applying defIndex={DefIndex}.", player.PlayerName, defIndex);
+                player.GiveNamedItem("weapon_knife");
             }
 
-            foreach (var handle in weaponServices.MyWeapons)
+            Server.NextFrame(() => TryApplyKnifeWithRetries(player, defIndex, attemptsRemaining - 1));
+            return;
+        }
+
+        if (!TryApplyKnifeEcon(knife, player, defIndex))
+        {
+            Server.NextFrame(() => TryApplyKnifeWithRetries(player, defIndex, attemptsRemaining - 1));
+            return;
+        }
+
+        player.ExecuteClientCommandFromServer("slot3");
+        Server.NextFrame(() => player.ExecuteClientCommandFromServer("slot3"));
+    }
+
+    private CBasePlayerWeapon? FindPlayerKnife(CCSPlayerController player)
+    {
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !player.PlayerPawn.IsValid)
+        {
+            return null;
+        }
+
+        var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
+        if (weaponServices == null)
+        {
+            return null;
+        }
+
+        foreach (var weaponHandle in weaponServices.MyWeapons)
+        {
+            var weapon = weaponHandle.Value;
+            if (weapon == null || !weapon.IsValid)
             {
-                var weapon = handle.Value;
-                if (weapon == null || !weapon.IsValid) continue;
-
-                if (!weapon.GetWeaponName().Contains("knife", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var econ = weapon.As<CEconEntity>();
-                if (econ == null || !econ.IsValid) continue;
-
-                econ.AttributeManager.Item.ItemDefinitionIndex = defIndex;
-
-                Utilities.SetStateChanged(econ, "CEconEntity", "m_AttributeManager");
-                _logger?.LogInformation("[FLOW-KNIFE] Applied ItemDefinitionIndex={DefIndex} to knife for player={Player}.", defIndex, player.PlayerName);
-
-                // refresh modelu
-                player.ExecuteClientCommandFromServer("slot2");
-                player.ExecuteClientCommandFromServer("slot3");
-
-                break;
+                continue;
             }
-        });
+
+            var weaponName = weapon.GetWeaponName();
+            if (weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(weaponName, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
+            {
+                return weapon;
+            }
+        }
+
+        return null;
+    }
+
+    private bool TryApplyKnifeEcon(CBasePlayerWeapon knife, CCSPlayerController player, ushort defIndex)
+    {
+        try
+        {
+            var econ = knife.As<CEconEntity>();
+            if (econ == null || !econ.IsValid)
+            {
+                return false;
+            }
+
+            var itemView = econ.AttributeManager.Item;
+            itemView.ItemDefinitionIndex = defIndex;
+            itemView.EntityQuality = 3;
+
+            econ.FallbackPaintKit = 0;
+            econ.FallbackSeed = 0;
+            econ.FallbackWear = 0.0001f;
+
+            Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
+            Utilities.SetStateChanged(knife, "CEconItemView", "m_iEntityQuality");
+            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackPaintKit");
+            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackSeed");
+            Utilities.SetStateChanged(knife, "CEconEntity", "m_flFallbackWear");
+            Utilities.SetStateChanged(knife, "CEconEntity", "m_AttributeManager");
+
+            _logger?.LogInformation("[FLOW-KNIFE] Applied ItemDefinitionIndex={DefIndex} to knife for player={Player}.", defIndex, player.PlayerName);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed applying knife econ for player={Player}.", player.PlayerName);
+            return false;
+        }
     }
 
     private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
