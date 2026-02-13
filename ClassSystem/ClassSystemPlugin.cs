@@ -462,42 +462,27 @@ namespace ClassSystem
             // kolejne skille → kolejne itemy
         }
 
-        [ConsoleCommand("css_test", "testowanie")]
-        public void CommandTest(CCSPlayerController? player, CommandInfo info)
+        [ConsoleCommand("css_tes", "Daje testowo nóż karambit")]
+        public void CommandTesKarambit(CCSPlayerController? player, CommandInfo info)
         {
-
             if (player == null || !player.IsValid || player.IsBot)
-                return;
-
-            // 1️⃣ Czy gracz ma RuntimeClass?
-            if (!player.UserId.HasValue)
             {
-                player.PrintToChat("❌ Brak UserId - spróbuj ponownie za chwilę.");
                 return;
             }
 
-            if (!TryGetPlayerState(player, out var state) || state.RuntimeClass == null)
+            try
             {
-                player.PrintToChat("❌ Nie masz jeszcze wybranej klasy.");
-                return;
+                player.GiveNamedItem("weapon_knife_karambit");
+                player.ExecuteClientCommandFromServer("slot3");
+                Server.NextFrame(() => player.ExecuteClientCommandFromServer("slot3"));
+
+                Logger.LogInformation("[FLOW-KNIFE] css_tes -> given weapon_knife_karambit to player={Player}", player.PlayerName);
+                player.PrintToChat("[TEST] Nadano nóż: karambit.");
             }
-
-            var runtime = state.RuntimeClass;
-
-            // 2️⃣ Czy klasa ma skill self_heal?
-            var skill = runtime.GetSkill("self_heal");
-            if (skill == null)
+            catch (Exception ex)
             {
-                player.PrintToChat("❌ Twoja klasa nie posiada umiejętności samoleczenia.");
-                return;
-            }
-
-            // 3️⃣ Spróbuj użyć skilla
-            var success = skill.Use(player, player);
-
-            if (!success)
-            {
-                player.PrintToChat("⏳ Nie możesz teraz użyć tej umiejętności (cooldown lub brak użyć).");
+                Logger.LogWarning(ex, "[FLOW-KNIFE] css_tes failed for player={Player}", player.PlayerName);
+                player.PrintToChat("[TEST] Nie udało się nadać karambita.");
             }
         }
 
