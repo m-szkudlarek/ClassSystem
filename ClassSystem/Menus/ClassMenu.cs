@@ -16,6 +16,8 @@ public sealed class ClassMenu
     private static readonly Dictionary<string, ushort> KnifeDefinitions = new(StringComparer.OrdinalIgnoreCase)
     {
         ["default"] = 42,
+        ["knife"] = 42,
+        ["weaponknife"] = 42,
         ["karambit"] = 507,
         ["knifekarambit"] = 507,
         ["m9bayonet"] = 508,
@@ -223,13 +225,9 @@ public sealed class ClassMenu
             return;
         }
 
-        ushort? knifeDef = null;
+        var knifeDef = ResolveKnifeDefinition(info);
 
-        if (!string.IsNullOrWhiteSpace(info.Knife) &&
-            KnifeDefinitions.TryGetValue(info.Knife, out var def))
-        {
-            knifeDef = def;
-        }
+        _logger?.LogInformation("[FLOW-KNIFE] Class={ClassId}, KnifeConfig={KnifeConfig}, ResolvedDef={KnifeDef}", info.Id, info.Knife ?? "<null>", knifeDef?.ToString() ?? "<none>");
 
         ApplyStats(pawn, info.Stats);
         GiveLoadout(player, info.Loadout);
@@ -238,6 +236,7 @@ public sealed class ClassMenu
 
         if (knifeDef.HasValue)
         {
+            _logger?.LogInformation("[FLOW-KNIFE] Scheduling knife apply for player={Player}, defIndex={DefIndex}", player.PlayerName, knifeDef.Value);
             Server.NextFrame(() =>
             {
                 Server.NextFrame(() =>
@@ -245,6 +244,10 @@ public sealed class ClassMenu
                     TryApplyKnife(player, knifeDef.Value);
                 });
             });
+        }
+        else
+        {
+            _logger?.LogInformation("[FLOW-KNIFE] Knife not applied for class={ClassId} (no valid mapping).", info.Id);
         }
         //ApplySkills(player, info.Skills, announce);
 
@@ -294,41 +297,110 @@ public sealed class ClassMenu
 
     private void TryApplyKnife(CCSPlayerController player, ushort defIndex)
     {
-        if (player == null || !player.IsValid) return;
+        if (player == null || !player.IsValid)
+        {
+            _logger?.LogWarning("[FLOW-KNIFE] TryApplyKnife aborted: invalid player.");
+            return;
+        }
+
+        TryApplyKnifeWithRetries(player, defIndex, 8);
+    }
+
+    private void TryApplyKnifeWithRetries(CCSPlayerController player, ushort defIndex, int attemptsRemaining)
+    {
+        if (player == null || !player.IsValid || attemptsRemaining <= 0)
+        {
+            _logger?.LogWarning("[FLOW-KNIFE] Knife apply aborted for player={Player}, attemptsRemaining={Attempts}.", player?.PlayerName ?? "<null>", attemptsRemaining);
+            return;
+        }
 
         var pawn = player.PlayerPawn.Value;
-        if (pawn == null || !player.PlayerPawn.IsValid) return;
-
-        // zawsze daj bazowy knife
-        player.GiveNamedItem("weapon_knife");
-
-        Server.NextFrame(() =>
+        if (pawn == null || !player.PlayerPawn.IsValid)
         {
-            var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
-            if (weaponServices == null) return;
+            _logger?.LogWarning("[FLOW-KNIFE] TryApplyKnife aborted: invalid pawn for player={Player}.", player.PlayerName);
+            return;
+        }
 
-            foreach (var handle in weaponServices.MyWeapons)
+        var knife = FindPlayerKnife(player);
+        if (knife == null)
+        {
+            if (attemptsRemaining == 8)
             {
-                var weapon = handle.Value;
-                if (weapon == null || !weapon.IsValid) continue;
-
-                if (!weapon.GetWeaponName().Contains("knife", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var econ = weapon.As<CEconEntity>();
-                if (econ == null || !econ.IsValid) continue;
-
-                econ.AttributeManager.Item.ItemDefinitionIndex = defIndex;
-
-                Utilities.SetStateChanged(econ, "CEconEntity", "m_AttributeManager");
-
-                // refresh modelu
-                player.ExecuteClientCommandFromServer("slot2");
-                player.ExecuteClientCommandFromServer("slot3");
-
-                break;
+                _logger?.LogInformation("[FLOW-KNIFE] Giving base knife to player={Player} before applying defIndex={DefIndex}.", player.PlayerName, defIndex);
+                player.GiveNamedItem("weapon_knife");
             }
-        });
+
+            Server.NextFrame(() => TryApplyKnifeWithRetries(player, defIndex, attemptsRemaining - 1));
+            return;
+        }
+
+        if (!TryApplyKnifeEcon(knife, player, defIndex))
+        {
+            Server.NextFrame(() => TryApplyKnifeWithRetries(player, defIndex, attemptsRemaining - 1));
+            return;
+        }
+
+        player.ExecuteClientCommandFromServer("slot3");
+        Server.NextFrame(() => player.ExecuteClientCommandFromServer("slot3"));
+    }
+
+    private CBasePlayerWeapon? FindPlayerKnife(CCSPlayerController player)
+    {
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !player.PlayerPawn.IsValid)
+        {
+            return null;
+        }
+
+        var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
+        if (weaponServices == null)
+        {
+            return null;
+        }
+
+        foreach (var weaponHandle in weaponServices.MyWeapons)
+        {
+            var weapon = weaponHandle.Value;
+            if (weapon == null || !weapon.IsValid)
+            {
+                continue;
+            }
+
+            var weaponName = weapon.GetWeaponName();
+            if (weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(weaponName, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
+            {
+                return weapon;
+            }
+        }
+
+        return null;
+    }
+
+    private bool TryApplyKnifeEcon(CBasePlayerWeapon knife, CCSPlayerController player, ushort defIndex)
+    {
+        try
+        {
+            var econ = knife.As<CEconEntity>();
+            if (econ == null || !econ.IsValid)
+            {
+                return false;
+            }
+
+            var itemView = econ.AttributeManager.Item;
+            itemView.ItemDefinitionIndex = defIndex;
+
+            Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
+            Utilities.SetStateChanged(knife, "CEconEntity", "m_AttributeManager");
+
+            _logger?.LogInformation("[FLOW-KNIFE] Applied ItemDefinitionIndex={DefIndex} to knife for player={Player}.", defIndex, player.PlayerName);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed applying knife econ for player={Player}, defIndex={DefIndex}. If FollowCS2ServerGuidelines is enabled, only safe props can be written.", player.PlayerName, defIndex);
+            return false;
+        }
     }
 
     private void ApplySkills(CCSPlayerController player, IReadOnlyCollection<Configuration.SkillDefinition> skills, bool announce)
@@ -358,6 +430,8 @@ public sealed class ClassMenu
         var normalizedLoadout = loadout
             .Select(NormalizeWeaponName)
             .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Where(name => !string.Equals(name, "weapon_c4", StringComparison.OrdinalIgnoreCase))
+            .Where(name => !string.Equals(name, "weapon_knife", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         if (normalizedLoadout.Count == 0)
@@ -368,16 +442,49 @@ public sealed class ClassMenu
         Server.NextFrame(() => StartLoadoutApplication(player, normalizedLoadout));
     }
 
+    private ushort? ResolveKnifeDefinition(ClassDefinition info)
+    {
+        if (string.IsNullOrWhiteSpace(info.Knife))
+        {
+            return null;
+        }
+
+        if (TryParseKnifeDefinition(info.Knife, out var knifeDef))
+        {
+            _logger?.LogInformation("[FLOW-KNIFE] Resolved knife '{KnifeName}' -> defIndex={DefIndex} for class={ClassId}.", info.Knife, knifeDef, info.Id);
+            return knifeDef;
+        }
+
+        _logger?.LogWarning("[WARN] Klasa {ClassId} ma nieprawidłowy knife '{KnifeName}'.", info.Id, info.Knife);
+        return null;
+    }
+
+    private static bool TryParseKnifeDefinition(string knifeName, out ushort defIndex)
+    {
+        var lowered = knifeName.Trim().ToLowerInvariant();
+
+        if (KnifeDefinitions.TryGetValue(lowered, out defIndex))
+        {
+            return true;
+        }
+
+        if (lowered.StartsWith("weapon_", StringComparison.Ordinal))
+        {
+            lowered = lowered["weapon_".Length..];
+        }
+
+        if (KnifeDefinitions.TryGetValue(lowered, out defIndex))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     private void StartLoadoutApplication(CCSPlayerController player, List<string> normalizedLoadout)
     {
         if (player == null || !player.IsValid)
         {
-            return;
-        }
-
-        if (player.Team == CsTeam.Terrorist && PlayerHasBomb(player))
-        {
-            TryDropBomb(player, () => StartLoadoutApplicationInternal(player, normalizedLoadout));
             return;
         }
 
@@ -448,95 +555,6 @@ public sealed class ClassMenu
         Server.NextFrame(() => GiveLoadoutItem(player, normalizedLoadout, index + 1, failedItems));
     }
 
-    private void TryDropBomb(CCSPlayerController player, Action onCompleted)
-    {
-        try
-        {
-            player.ExecuteClientCommandFromServer("slot5");
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "[DEBUG] Nie udało się przełączyć gracza {Player} na slot bomby.", player.PlayerName);
-        }
-
-        Server.NextFrame(() =>
-        {
-            if (player == null || !player.IsValid || player.Team != CsTeam.Terrorist)
-            {
-                onCompleted();
-                return;
-            }
-
-            if (!PlayerHasBomb(player))
-            {
-                onCompleted();
-                return;
-            }
-
-            try
-            {
-                player.DropActiveWeapon();
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "[DEBUG] Nie udało się zrzucić aktywnej broni gracza {Player}.", player.PlayerName);
-            }
-
-            if (PlayerHasBomb(player))
-            {
-                try
-                {
-                    player.ExecuteClientCommandFromServer("drop");
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "[DEBUG] Nie udało się wykonać komendy drop dla gracza {Player}.", player.PlayerName);
-                }
-            }
-
-            onCompleted();
-        });
-    }
-
-
-    private bool PlayerHasBomb(CCSPlayerController player)
-    {
-        try
-        {
-            var pawn = player.PlayerPawn.Value;
-            if (pawn == null || !player.PlayerPawn.IsValid)
-            {
-                return false;
-            }
-
-            var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
-            if (weaponServices == null)
-            {
-                return false;
-            }
-
-            foreach (var weaponHandle in weaponServices.MyWeapons)
-            {
-                var weapon = weaponHandle.Value;
-                if (weapon == null || !weapon.IsValid)
-                {
-                    continue;
-                }
-
-                if (string.Equals(weapon.GetWeaponName(), "weapon_c4", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "[DEBUG] Nie udało się sprawdzić, czy gracz {Player} ma C4.", player.PlayerName);
-        }
-
-        return false;
-    }
-
     private string NormalizeWeaponName(string weaponName)
     {
         if (_logger == null) return string.Empty;
@@ -579,4 +597,3 @@ public sealed class ClassMenu
         return TryGetSelectedClass(userId.Value, out classInfo);
     }
 }
-
