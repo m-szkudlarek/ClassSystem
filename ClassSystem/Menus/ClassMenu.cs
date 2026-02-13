@@ -225,6 +225,8 @@ public sealed class ClassMenu
 
         var knifeDef = ResolveKnifeDefinition(info);
 
+        _logger?.LogInformation("[FLOW-KNIFE] Class={ClassId}, KnifeConfig={KnifeConfig}, ResolvedDef={KnifeDef}", info.Id, info.Knife ?? "<null>", knifeDef?.ToString() ?? "<none>");
+
         ApplyStats(pawn, info.Stats);
         GiveLoadout(player, info.Loadout);
         GiveArmorAndHelmetItem(player, info);
@@ -232,6 +234,7 @@ public sealed class ClassMenu
 
         if (knifeDef.HasValue)
         {
+            _logger?.LogInformation("[FLOW-KNIFE] Scheduling knife apply for player={Player}, defIndex={DefIndex}", player.PlayerName, knifeDef.Value);
             Server.NextFrame(() =>
             {
                 Server.NextFrame(() =>
@@ -239,6 +242,10 @@ public sealed class ClassMenu
                     TryApplyKnife(player, knifeDef.Value);
                 });
             });
+        }
+        else
+        {
+            _logger?.LogInformation("[FLOW-KNIFE] Knife not applied for class={ClassId} (no valid mapping).", info.Id);
         }
         //ApplySkills(player, info.Skills, announce);
 
@@ -288,18 +295,31 @@ public sealed class ClassMenu
 
     private void TryApplyKnife(CCSPlayerController player, ushort defIndex)
     {
-        if (player == null || !player.IsValid) return;
+        if (player == null || !player.IsValid)
+        {
+            _logger?.LogWarning("[FLOW-KNIFE] TryApplyKnife aborted: invalid player.");
+            return;
+        }
 
         var pawn = player.PlayerPawn.Value;
-        if (pawn == null || !player.PlayerPawn.IsValid) return;
+        if (pawn == null || !player.PlayerPawn.IsValid)
+        {
+            _logger?.LogWarning("[FLOW-KNIFE] TryApplyKnife aborted: invalid pawn for player={Player}.", player.PlayerName);
+            return;
+        }
 
+        _logger?.LogInformation("[FLOW-KNIFE] Giving base knife to player={Player} before applying defIndex={DefIndex}.", player.PlayerName, defIndex);
         // zawsze daj bazowy knife
         player.GiveNamedItem("weapon_knife");
 
         Server.NextFrame(() =>
         {
             var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
-            if (weaponServices == null) return;
+            if (weaponServices == null)
+            {
+                _logger?.LogWarning("[FLOW-KNIFE] WeaponServices unavailable for player={Player}.", player.PlayerName);
+                return;
+            }
 
             foreach (var handle in weaponServices.MyWeapons)
             {
@@ -315,6 +335,7 @@ public sealed class ClassMenu
                 econ.AttributeManager.Item.ItemDefinitionIndex = defIndex;
 
                 Utilities.SetStateChanged(econ, "CEconEntity", "m_AttributeManager");
+                _logger?.LogInformation("[FLOW-KNIFE] Applied ItemDefinitionIndex={DefIndex} to knife for player={Player}.", defIndex, player.PlayerName);
 
                 // refresh modelu
                 player.ExecuteClientCommandFromServer("slot2");
@@ -372,6 +393,7 @@ public sealed class ClassMenu
 
         if (TryParseKnifeDefinition(info.Knife, out var knifeDef))
         {
+            _logger?.LogInformation("[FLOW-KNIFE] Resolved knife '{KnifeName}' -> defIndex={DefIndex} for class={ClassId}.", info.Knife, knifeDef, info.Id);
             return knifeDef;
         }
 
