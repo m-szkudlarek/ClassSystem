@@ -390,14 +390,7 @@ public sealed class ClassMenu
             var itemView = econ.AttributeManager.Item;
             itemView.ItemDefinitionIndex = defIndex;
 
-            econ.FallbackPaintKit = 0;
-            econ.FallbackSeed = 0;
-            econ.FallbackWear = 0.0001f;
-
             Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackPaintKit");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackSeed");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_flFallbackWear");
             Utilities.SetStateChanged(knife, "CEconEntity", "m_AttributeManager");
 
             _logger?.LogInformation("[FLOW-KNIFE] Applied ItemDefinitionIndex={DefIndex} to knife for player={Player}.", defIndex, player.PlayerName);
@@ -405,7 +398,7 @@ public sealed class ClassMenu
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed applying knife econ for player={Player}, defIndex={DefIndex}.", player.PlayerName, defIndex);
+            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed applying knife econ for player={Player}, defIndex={DefIndex}. If FollowCS2ServerGuidelines is enabled, only safe props can be written.", player.PlayerName, defIndex);
             return false;
         }
     }
