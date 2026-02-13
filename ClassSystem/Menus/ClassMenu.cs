@@ -352,6 +352,7 @@ public sealed class ClassMenu
         var normalizedLoadout = loadout
             .Select(NormalizeWeaponName)
             .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Where(name => !string.Equals(name, "weapon_c4", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         if (normalizedLoadout.Count == 0)
@@ -404,12 +405,6 @@ public sealed class ClassMenu
     {
         if (player == null || !player.IsValid)
         {
-            return;
-        }
-
-        if (player.Team == CsTeam.Terrorist && PlayerHasBomb(player))
-        {
-            TryDropBomb(player, () => StartLoadoutApplicationInternal(player, normalizedLoadout));
             return;
         }
 
@@ -478,95 +473,6 @@ public sealed class ClassMenu
         }
 
         Server.NextFrame(() => GiveLoadoutItem(player, normalizedLoadout, index + 1, failedItems));
-    }
-
-    private void TryDropBomb(CCSPlayerController player, Action onCompleted)
-    {
-        try
-        {
-            player.ExecuteClientCommandFromServer("slot5");
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "[DEBUG] Nie udało się przełączyć gracza {Player} na slot bomby.", player.PlayerName);
-        }
-
-        Server.NextFrame(() =>
-        {
-            if (player == null || !player.IsValid || player.Team != CsTeam.Terrorist)
-            {
-                onCompleted();
-                return;
-            }
-
-            if (!PlayerHasBomb(player))
-            {
-                onCompleted();
-                return;
-            }
-
-            try
-            {
-                player.DropActiveWeapon();
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "[DEBUG] Nie udało się zrzucić aktywnej broni gracza {Player}.", player.PlayerName);
-            }
-
-            if (PlayerHasBomb(player))
-            {
-                try
-                {
-                    player.ExecuteClientCommandFromServer("drop");
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "[DEBUG] Nie udało się wykonać komendy drop dla gracza {Player}.", player.PlayerName);
-                }
-            }
-
-            onCompleted();
-        });
-    }
-
-
-    private bool PlayerHasBomb(CCSPlayerController player)
-    {
-        try
-        {
-            var pawn = player.PlayerPawn.Value;
-            if (pawn == null || !player.PlayerPawn.IsValid)
-            {
-                return false;
-            }
-
-            var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
-            if (weaponServices == null)
-            {
-                return false;
-            }
-
-            foreach (var weaponHandle in weaponServices.MyWeapons)
-            {
-                var weapon = weaponHandle.Value;
-                if (weapon == null || !weapon.IsValid)
-                {
-                    continue;
-                }
-
-                if (string.Equals(weapon.GetWeaponName(), "weapon_c4", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "[DEBUG] Nie udało się sprawdzić, czy gracz {Player} ma C4.", player.PlayerName);
-        }
-
-        return false;
     }
 
     private string NormalizeWeaponName(string weaponName)
