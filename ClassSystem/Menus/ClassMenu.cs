@@ -16,6 +16,8 @@ public sealed class ClassMenu
     private static readonly Dictionary<string, ushort> KnifeDefinitions = new(StringComparer.OrdinalIgnoreCase)
     {
         ["default"] = 42,
+        ["knife"] = 42,
+        ["weaponknife"] = 42,
         ["karambit"] = 507,
         ["knifekarambit"] = 507,
         ["m9bayonet"] = 508,
@@ -374,6 +376,7 @@ public sealed class ClassMenu
             .Select(NormalizeWeaponName)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Where(name => !string.Equals(name, "weapon_c4", StringComparison.OrdinalIgnoreCase))
+            .Where(name => !string.Equals(name, "weapon_knife", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         if (normalizedLoadout.Count == 0)

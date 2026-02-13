@@ -109,8 +109,30 @@ public static class ClassConfigLoader
             ? null
             : classInfo.Knife.Trim();
 
+        classInfo.Loadout = classInfo.Loadout
+            .Where(item => !IsBaseKnifeToken(item))
+            .ToList();
+
+        classInfo.Knife ??= "default";
+
         classInfo.Armor = Math.Clamp(classInfo.Armor, 0, 100);
         classInfo.Stats.Normalize();
+    }
+
+    private static bool IsBaseKnifeToken(string? itemName)
+    {
+        if (string.IsNullOrWhiteSpace(itemName))
+        {
+            return false;
+        }
+
+        var normalized = itemName
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
+
+        return normalized is "knife" or "weaponknife";
     }
 
     private static List<ClassDefinition> GetDefaultClasses() =>
