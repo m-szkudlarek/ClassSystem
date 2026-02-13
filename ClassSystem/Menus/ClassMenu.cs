@@ -389,14 +389,12 @@ public sealed class ClassMenu
 
             var itemView = econ.AttributeManager.Item;
             itemView.ItemDefinitionIndex = defIndex;
-            itemView.EntityQuality = 3;
 
             econ.FallbackPaintKit = 0;
             econ.FallbackSeed = 0;
             econ.FallbackWear = 0.0001f;
 
             Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
-            Utilities.SetStateChanged(knife, "CEconItemView", "m_iEntityQuality");
             Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackPaintKit");
             Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackSeed");
             Utilities.SetStateChanged(knife, "CEconEntity", "m_flFallbackWear");
@@ -407,7 +405,7 @@ public sealed class ClassMenu
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed applying knife econ for player={Player}.", player.PlayerName);
+            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed applying knife econ for player={Player}, defIndex={DefIndex}.", player.PlayerName, defIndex);
             return false;
         }
     }
