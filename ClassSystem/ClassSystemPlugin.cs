@@ -9,9 +9,12 @@ using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Core.Capabilities;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Entities;
+using CounterStrikeSharp.API.Modules.Extensions;
 using CounterStrikeSharp.API.Modules.Utils;
 using MenuManager;
 using Microsoft.Extensions.Logging;
+using static System.Net.Mime.MediaTypeNames;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ClassSystem
 {
@@ -461,28 +464,278 @@ namespace ClassSystem
 
             // kolejne skille → kolejne itemy
         }
-
-        [ConsoleCommand("css_tes", "Daje testowo nóż karambit")]
-        public void CommandTesKarambit(CCSPlayerController? player, CommandInfo info)
+        [ConsoleCommand("css_test2", "TEST: daje weapon_knife, potem daje weapon_knife_karambit i ustawia def=507 na karambicie")]
+        public void CommandTestKarambit2(CCSPlayerController? player, CommandInfo info)
         {
             if (player == null || !player.IsValid || player.IsBot)
-            {
                 return;
-            }
+
+            Logger.LogInformation("[TEST-KNIFE2] start player={Player}", player.PlayerName);
 
             try
             {
-                player.GiveNamedItem("weapon_knife_karambit");
-                player.ExecuteClientCommandFromServer("slot3");
-                Server.NextFrame(() => player.ExecuteClientCommandFromServer("slot3"));
-
-                Logger.LogInformation("[FLOW-KNIFE] css_tes -> given weapon_knife_karambit to player={Player}", player.PlayerName);
-                player.PrintToChat("[TEST] Nadano nóż: karambit.");
+                player.GiveNamedItem("weapon_knife");
+                Logger.LogInformation("[TEST-KNIFE2] given base weapon_knife player={Player}", player.PlayerName);
             }
             catch (Exception ex)
             {
-                Logger.LogWarning(ex, "[FLOW-KNIFE] css_tes failed for player={Player}", player.PlayerName);
-                player.PrintToChat("[TEST] Nie udało się nadać karambita.");
+                Logger.LogWarning(ex, "[TEST-KNIFE2] failed give weapon_knife player={Player}", player.PlayerName);
+                return;
+            }
+
+            Server.NextFrame(() =>
+            {
+                try
+                {
+                    // 2) spróbuj dać encję karambita
+                    player.GiveNamedItem("weapon_knife_karambit");
+                    Logger.LogInformation("[TEST-KNIFE2] given entity weapon_knife_karambit player={Player}", player.PlayerName);
+                }
+                catch (Exception ex2)
+                {
+                    Logger.LogWarning(ex2, "[TEST-KNIFE2] failed give weapon_knife_karambit player={Player}", player.PlayerName);
+                }
+
+                // 3) w kolejnej klatce znajdź karambita i ustaw mu def=507
+                Server.NextFrame(() =>
+                {
+                    try
+                    {
+                        var pawn = player.PlayerPawn.Value;
+                        if (pawn == null || !player.PlayerPawn.IsValid)
+                        {
+                            Logger.LogWarning("[TEST-KNIFE2] pawn invalid player={Player}", player.PlayerName);
+                            return;
+                        }
+
+                        var ws = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
+                        if (ws == null)
+                        {
+                            Logger.LogWarning("[TEST-KNIFE2] weaponServices null player={Player}", player.PlayerName);
+                            return;
+                        }
+
+                        CBasePlayerWeapon? karambit = null;
+
+                        // dump przed + szukanie karambita
+                        foreach (var h in ws.MyWeapons)
+                        {
+                            var w = h.Value;
+                            if (w == null || !w.IsValid) continue;
+
+                            ushort def = 0;
+                            try
+                            {
+                                var econ = w.As<CEconEntity>();
+                                if (econ != null && econ.IsValid)
+                                    def = econ.AttributeManager.Item.ItemDefinitionIndex;
+                            }
+                            catch { }
+
+                            var name = w.GetWeaponName();
+                            Logger.LogInformation("[TEST-KNIFE2] dump(before_apply) idx={Idx} name={Name} def={Def}", w.Index, name, def);
+
+                            if (string.Equals(name, "weapon_knife_karambit", StringComparison.OrdinalIgnoreCase))
+                                karambit = w;
+                        }
+
+                        if (karambit == null)
+                        {
+                            Logger.LogWarning("[TEST-KNIFE2] NO weapon_knife_karambit found in inventory player={Player}", player.PlayerName);
+                            player.PrintToChat("[TEST] Nie znalazłem weapon_knife_karambit w ekwipunku po GiveNamedItem.");
+                            return;
+                        }
+
+                        var econEntity = karambit.As<CEconEntity>();
+                        if (econEntity == null || !econEntity.IsValid)
+                        {
+                            Logger.LogWarning("[TEST-KNIFE2] karambit has no CEconEntity idx={Idx}", karambit.Index);
+                            return;
+                        }
+
+                        econEntity.AttributeManager.Item.ItemDefinitionIndex = 507;
+                        Utilities.SetStateChanged(karambit, "CEconItemView", "m_iItemDefinitionIndex");
+                        Utilities.SetStateChanged(karambit, "CEconEntity", "m_AttributeManager");
+
+                        Logger.LogInformation("[TEST-KNIFE2] applied def=507 on KARMBIT idx={Idx} player={Player}", karambit.Index, player.PlayerName);
+
+                        // 4) wymuś equip
+                        player.ExecuteClientCommandFromServer("slot2");
+                        player.ExecuteClientCommandFromServer("slot3");
+
+                        Server.NextFrame(() =>
+                        {
+                            player.ExecuteClientCommandFromServer("slot3");
+
+                            // dump po
+                            foreach (var h2 in ws.MyWeapons)
+                            {
+                                var w2 = h2.Value;
+                                if (w2 == null || !w2.IsValid) continue;
+
+                                ushort def2 = 0;
+                                try
+                                {
+                                    var econ2 = w2.As<CEconEntity>();
+                                    if (econ2 != null && econ2.IsValid)
+                                        def2 = econ2.AttributeManager.Item.ItemDefinitionIndex;
+                                }
+                                catch { }
+
+                                Logger.LogInformation("[TEST-KNIFE2] dump(after_apply) idx={Idx} name={Name} def={Def}",
+                                    w2.Index, w2.GetWeaponName(), def2);
+                            }
+                        });
+
+                        player.PrintToChat("[TEST] Karambit entity + def=507 próba wykonana.");
+                    }
+                    catch (Exception ex3)
+                    {
+                        Logger.LogWarning(ex3, "[TEST-KNIFE2] failed apply flow player={Player}", player.PlayerName);
+                    }
+                });
+            });
+        }
+
+
+        [ConsoleCommand("css_test", "TEST: daje bazowy weapon_knife i próbuje zmienić go econem na karambit (def=507)")]
+        public void CommandTestKarambit(CCSPlayerController? player, CommandInfo info)
+        {
+            if (player == null || !player.IsValid || player.IsBot)
+                return;
+
+            Logger.LogInformation("[TEST-KNIFE] start player={Player}", player.PlayerName);
+
+            try
+            {
+                // 1) Daj bazowy nóż (nic nie usuwamy)
+                player.GiveNamedItem("weapon_knife");
+                Logger.LogInformation("[TEST-KNIFE] given weapon_knife to player={Player}", player.PlayerName);
+
+                // 2) Dopiero w następnej klatce grzebiemy w ekwipunku / econ
+                Server.NextFrame(() =>
+                {
+                    try
+                    {
+                        var pawn = player.PlayerPawn.Value;
+                        if (pawn == null || !player.PlayerPawn.IsValid)
+                        {
+                            Logger.LogWarning("[TEST-KNIFE] pawn invalid player={Player}", player.PlayerName);
+                            return;
+                        }
+
+                        var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
+                        if (weaponServices == null)
+                        {
+                            Logger.LogWarning("[TEST-KNIFE] weaponServices null player={Player}", player.PlayerName);
+                            return;
+                        }
+
+                        // dump przed
+                        foreach (var h in weaponServices.MyWeapons)
+                        {
+                            var w = h.Value;
+                            if (w == null || !w.IsValid) continue;
+
+                            ushort def = 0;
+                            try
+                            {
+                                var econ = w.As<CEconEntity>();
+                                if (econ != null && econ.IsValid)
+                                    def = econ.AttributeManager.Item.ItemDefinitionIndex;
+                            }
+                            catch { /* ignore */ }
+
+                            Logger.LogInformation("[TEST-KNIFE] dump(before_apply) idx={Idx} name={Name} def={Def}",
+                                w.Index, w.GetWeaponName(), def);
+                        }
+
+                        // 3) znajdź bazowy weapon_knife
+                        CBasePlayerWeapon? knife = null;
+                        foreach (var h in weaponServices.MyWeapons)
+                        {
+                            var w = h.Value;
+                            if (w == null || !w.IsValid) continue;
+
+                            if (string.Equals(w.GetWeaponName(), "weapon_knife", StringComparison.OrdinalIgnoreCase))
+                            {
+                                knife = w;
+                                break;
+                            }
+                        }
+
+                        if (knife == null)
+                        {
+                            Logger.LogWarning("[TEST-KNIFE] weapon_knife not found in inventory player={Player}", player.PlayerName);
+                            player.PrintToChat("[TEST] Nie znaleziono weapon_knife w ekwipunku.");
+                            return;
+                        }
+
+                        Logger.LogInformation("[TEST-KNIFE] found knife idx={Idx} name={Name}", knife.Index, knife.GetWeaponName());
+
+                        // 4) ECON: ustaw defindex na karambit (507)
+                        var econEntity = knife.As<CEconEntity>();
+                        if (econEntity == null || !econEntity.IsValid)
+                        {
+                            Logger.LogWarning("[TEST-KNIFE] CEconEntity invalid for knife idx={Idx}", knife.Index);
+                            player.PrintToChat("[TEST] Knife nie ma CEconEntity.");
+                            return;
+                        }
+
+                        econEntity.AttributeManager.Item.ItemDefinitionIndex = 507;
+
+                        Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
+                        Utilities.SetStateChanged(knife, "CEconEntity", "m_AttributeManager");
+
+                        Logger.LogInformation("[TEST-KNIFE] applied def=507 on idx={Idx} player={Player}", knife.Index, player.PlayerName);
+
+                        // 5) wymuś re-equip (żeby klient to zobaczył)
+                        // slot2 -> slot3 -> slot2 -> slot3 (po klatkach)
+                        player.ExecuteClientCommandFromServer("slot2");
+                        player.ExecuteClientCommandFromServer("slot3");
+
+                        Server.NextFrame(() =>
+                        {
+                            player.ExecuteClientCommandFromServer("slot2");
+                            player.ExecuteClientCommandFromServer("slot3");
+
+                            // dump po
+                            try
+                            {
+                                foreach (var h2 in weaponServices.MyWeapons)
+                                {
+                                    var w2 = h2.Value;
+                                    if (w2 == null || !w2.IsValid) continue;
+
+                                    ushort def2 = 0;
+                                    try
+                                    {
+                                        var econ2 = w2.As<CEconEntity>();
+                                        if (econ2 != null && econ2.IsValid)
+                                            def2 = econ2.AttributeManager.Item.ItemDefinitionIndex;
+                                    }
+                                    catch { /* ignore */ }
+
+                                    Logger.LogInformation("[TEST-KNIFE] dump(after_apply) idx={Idx} name={Name} def={Def}",
+                                        w2.Index, w2.GetWeaponName(), def2);
+                                }
+                            }
+                            catch { /* ignore */ }
+                        });
+
+                        player.PrintToChat("[TEST] Próba ustawienia karambita (def=507) wykonana. Sprawdź model noża.");
+                    }
+                    catch (Exception ex2)
+                    {
+                        Logger.LogWarning(ex2, "[TEST-KNIFE] failed in NextFrame player={Player}", player.PlayerName);
+                        player.PrintToChat("[TEST] Błąd w fazie apply.");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "[TEST-KNIFE] initial give failed player={Player}", player.PlayerName);
+                player.PrintToChat("[TEST] Nie udało się dać weapon_knife.");
             }
         }
 

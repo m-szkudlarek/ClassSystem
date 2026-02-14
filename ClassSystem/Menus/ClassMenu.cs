@@ -264,7 +264,7 @@ public sealed class ClassMenu
         GiveArmorAndHelmetItem(player, info);
 
 
-        if (knifeDef.HasValue)
+        /*if (knifeDef.HasValue)
         {
             _logger?.LogInformation("[FLOW-KNIFE] Scheduling knife apply for player={Player}, defIndex={DefIndex}, entity={KnifeEntity}", player.PlayerName, knifeDef.Value, knifeEntityName ?? "weapon_knife");
             Server.NextFrame(() =>
@@ -278,7 +278,7 @@ public sealed class ClassMenu
         else
         {
             _logger?.LogInformation("[FLOW-KNIFE] Knife not applied for class={ClassId} (no valid mapping).", info.Id);
-        }
+        }*/
         //ApplySkills(player, info.Skills, announce);
 
         if (announce)
