@@ -13,64 +13,6 @@ namespace ClassSystem.Menus;
 public sealed class ClassMenu
 {
 
-    private static readonly Dictionary<string, ushort> KnifeDefinitions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["default"] = 42,
-        ["knife"] = 42,
-        ["weaponknife"] = 42,
-        ["karambit"] = 507,
-        ["knifekarambit"] = 507,
-        ["m9bayonet"] = 508,
-        ["knifem9bayonet"] = 508,
-        ["bayonet"] = 500,
-        ["flip"] = 505,
-        ["knifeflip"] = 505,
-        ["gut"] = 506,
-        ["knifegut"] = 506,
-        ["tactical"] = 509,
-        ["knifetactical"] = 509,
-        ["falchion"] = 512,
-        ["knifefalchion"] = 512,
-        ["survivalbowie"] = 514,
-        ["bowie"] = 514,
-        ["knifesurvivalbowie"] = 514,
-        ["butterfly"] = 515,
-        ["knifebutterfly"] = 515,
-        ["shadowdaggers"] = 516,
-        ["daggers"] = 516,
-        ["skeleton"] = 525,
-        ["knifeskeleton"] = 525
-    };
-
-    private static readonly Dictionary<string, string> KnifeEntityNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["default"] = "weapon_knife",
-        ["knife"] = "weapon_knife",
-        ["weaponknife"] = "weapon_knife",
-        ["karambit"] = "weapon_knife_karambit",
-        ["knifekarambit"] = "weapon_knife_karambit",
-        ["m9bayonet"] = "weapon_knife_m9_bayonet",
-        ["knifem9bayonet"] = "weapon_knife_m9_bayonet",
-        ["bayonet"] = "weapon_bayonet",
-        ["flip"] = "weapon_knife_flip",
-        ["knifeflip"] = "weapon_knife_flip",
-        ["gut"] = "weapon_knife_gut",
-        ["knifegut"] = "weapon_knife_gut",
-        ["tactical"] = "weapon_knife_tactical",
-        ["knifetactical"] = "weapon_knife_tactical",
-        ["falchion"] = "weapon_knife_falchion",
-        ["knifefalchion"] = "weapon_knife_falchion",
-        ["survivalbowie"] = "weapon_knife_survival_bowie",
-        ["bowie"] = "weapon_knife_survival_bowie",
-        ["knifesurvivalbowie"] = "weapon_knife_survival_bowie",
-        ["butterfly"] = "weapon_knife_butterfly",
-        ["knifebutterfly"] = "weapon_knife_butterfly",
-        ["shadowdaggers"] = "weapon_knife_push",
-        ["daggers"] = "weapon_knife_push",
-        ["skeleton"] = "weapon_knife_skeleton",
-        ["knifeskeleton"] = "weapon_knife_skeleton"
-    };
-
     private IMenuApi? _api;
     private ILogger? _logger;
 
@@ -254,31 +196,9 @@ public sealed class ClassMenu
             return;
         }
 
-        var knifeDef = ResolveKnifeDefinition(info);
-        var knifeEntityName = ResolveKnifeEntityName(info);
-
-        _logger?.LogInformation("[FLOW-KNIFE] Class={ClassId}, KnifeConfig={KnifeConfig}, ResolvedDef={KnifeDef}, ResolvedEntity={KnifeEntity}", info.Id, info.Knife ?? "<null>", knifeDef?.ToString() ?? "<none>", knifeEntityName ?? "<none>");
-
         ApplyStats(pawn, info.Stats);
         GiveLoadout(player, info.Loadout);
         GiveArmorAndHelmetItem(player, info);
-
-
-        /*if (knifeDef.HasValue)
-        {
-            _logger?.LogInformation("[FLOW-KNIFE] Scheduling knife apply for player={Player}, defIndex={DefIndex}, entity={KnifeEntity}", player.PlayerName, knifeDef.Value, knifeEntityName ?? "weapon_knife");
-            Server.NextFrame(() =>
-            {
-                Server.NextFrame(() =>
-                {
-                    TryApplyKnife(player, knifeDef.Value, knifeEntityName ?? "weapon_knife");
-                });
-            });
-        }
-        else
-        {
-            _logger?.LogInformation("[FLOW-KNIFE] Knife not applied for class={ClassId} (no valid mapping).", info.Id);
-        }*/
         //ApplySkills(player, info.Skills, announce);
 
         if (announce)
@@ -306,7 +226,7 @@ public sealed class ClassMenu
 
         var itemName = classInfo.Helmet
             ? "item_assaultsuit"
-            : classInfo.Armor > 0
+            : classInfo.Armor
                 ? "item_kevlar"
                 : string.Empty;
 
@@ -322,133 +242,6 @@ public sealed class ClassMenu
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "[DEBUG] Nie udało się nadać itemu pancerza/hełmu {Item} graczowi {Player}.", itemName, player.PlayerName);
-        }
-    }
-
-    private void TryApplyKnife(CCSPlayerController player, ushort defIndex, string knifeEntityName)
-    {
-        if (player == null || !player.IsValid)
-        {
-            _logger?.LogWarning("[FLOW-KNIFE] TryApplyKnife aborted: invalid player.");
-            return;
-        }
-
-        TryApplyKnifeWithRetries(player, defIndex, knifeEntityName, 8);
-    }
-
-    private void TryApplyKnifeWithRetries(CCSPlayerController player, ushort defIndex, string knifeEntityName, int attemptsRemaining)
-    {
-        if (player == null || !player.IsValid || attemptsRemaining <= 0)
-        {
-            _logger?.LogWarning("[FLOW-KNIFE] Knife apply aborted for player={Player}, attemptsRemaining={Attempts}.", player?.PlayerName ?? "<null>", attemptsRemaining);
-            return;
-        }
-
-        var pawn = player.PlayerPawn.Value;
-        if (pawn == null || !player.PlayerPawn.IsValid)
-        {
-            _logger?.LogWarning("[FLOW-KNIFE] TryApplyKnife aborted: invalid pawn for player={Player}.", player.PlayerName);
-            return;
-        }
-
-        var knife = FindPlayerKnife(player);
-        if (knife == null)
-        {
-            if (attemptsRemaining == 8)
-            {
-                _logger?.LogInformation("[FLOW-KNIFE] Giving preferred knife entity={KnifeEntity} to player={Player} before applying defIndex={DefIndex}.", knifeEntityName, player.PlayerName, defIndex);
-                TryGiveKnifeEntity(player, knifeEntityName);
-            }
-
-            // Fallback: część serwerów akceptuje tylko bazowy weapon_knife.
-            if (attemptsRemaining == 6 || attemptsRemaining == 3)
-            {
-                _logger?.LogInformation("[FLOW-KNIFE] Fallback give base knife for player={Player}, attemptsRemaining={Attempts}.", player.PlayerName, attemptsRemaining);
-                TryGiveKnifeEntity(player, "weapon_knife");
-            }
-
-            Server.NextFrame(() => TryApplyKnifeWithRetries(player, defIndex, knifeEntityName, attemptsRemaining - 1));
-            return;
-        }
-
-        if (!TryApplyKnifeEcon(knife, player, defIndex))
-        {
-            Server.NextFrame(() => TryApplyKnifeWithRetries(player, defIndex, knifeEntityName, attemptsRemaining - 1));
-            return;
-        }
-
-        player.ExecuteClientCommandFromServer("slot3");
-        Server.NextFrame(() => player.ExecuteClientCommandFromServer("slot3"));
-    }
-
-    private void TryGiveKnifeEntity(CCSPlayerController player, string knifeEntityName)
-    {
-        try
-        {
-            player.GiveNamedItem(knifeEntityName);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed to give knife entity={KnifeEntity} for player={Player}.", knifeEntityName, player.PlayerName);
-        }
-    }
-
-    private CBasePlayerWeapon? FindPlayerKnife(CCSPlayerController player)
-    {
-        var pawn = player.PlayerPawn.Value;
-        if (pawn == null || !player.PlayerPawn.IsValid)
-        {
-            return null;
-        }
-
-        var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
-        if (weaponServices == null)
-        {
-            return null;
-        }
-
-        foreach (var weaponHandle in weaponServices.MyWeapons)
-        {
-            var weapon = weaponHandle.Value;
-            if (weapon == null || !weapon.IsValid)
-            {
-                continue;
-            }
-
-            var weaponName = weapon.GetWeaponName();
-            if (weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(weaponName, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
-            {
-                return weapon;
-            }
-        }
-
-        return null;
-    }
-
-    private bool TryApplyKnifeEcon(CBasePlayerWeapon knife, CCSPlayerController player, ushort defIndex)
-    {
-        try
-        {
-            var econ = knife.As<CEconEntity>();
-            if (econ == null || !econ.IsValid)
-            {
-                return false;
-            }
-
-            var itemView = econ.AttributeManager.Item;
-            itemView.ItemDefinitionIndex = defIndex;
-
-            Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_AttributeManager");
-
-            _logger?.LogInformation("[FLOW-KNIFE] Applied ItemDefinitionIndex={DefIndex} to knife for player={Player}.", defIndex, player.PlayerName);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed applying knife econ for player={Player}, defIndex={DefIndex}. If FollowCS2ServerGuidelines is enabled, only safe props can be written.", player.PlayerName, defIndex);
-            return false;
         }
     }
 
@@ -489,66 +282,6 @@ public sealed class ClassMenu
         }
 
         Server.NextFrame(() => StartLoadoutApplication(player, normalizedLoadout));
-    }
-
-    private ushort? ResolveKnifeDefinition(ClassDefinition info)
-    {
-        if (string.IsNullOrWhiteSpace(info.Knife))
-        {
-            return null;
-        }
-
-        if (TryParseKnifeDefinition(info.Knife, out var knifeDef))
-        {
-            _logger?.LogInformation("[FLOW-KNIFE] Resolved knife '{KnifeName}' -> defIndex={DefIndex} for class={ClassId}.", info.Knife, knifeDef, info.Id);
-            return knifeDef;
-        }
-
-        _logger?.LogWarning("[WARN] Klasa {ClassId} ma nieprawidłowy knife '{KnifeName}'.", info.Id, info.Knife);
-        return null;
-    }
-
-    private string? ResolveKnifeEntityName(ClassDefinition info)
-    {
-        if (string.IsNullOrWhiteSpace(info.Knife))
-        {
-            return null;
-        }
-
-        var lowered = info.Knife.Trim().ToLowerInvariant();
-        if (KnifeEntityNames.TryGetValue(lowered, out var entityName))
-        {
-            return entityName;
-        }
-
-        if (lowered.StartsWith("weapon_", StringComparison.Ordinal))
-        {
-            lowered = lowered["weapon_".Length..];
-        }
-
-        return KnifeEntityNames.TryGetValue(lowered, out entityName) ? entityName : null;
-    }
-
-    private static bool TryParseKnifeDefinition(string knifeName, out ushort defIndex)
-    {
-        var lowered = knifeName.Trim().ToLowerInvariant();
-
-        if (KnifeDefinitions.TryGetValue(lowered, out defIndex))
-        {
-            return true;
-        }
-
-        if (lowered.StartsWith("weapon_", StringComparison.Ordinal))
-        {
-            lowered = lowered["weapon_".Length..];
-        }
-
-        if (KnifeDefinitions.TryGetValue(lowered, out defIndex))
-        {
-            return true;
-        }
-
-        return false;
     }
 
     private void StartLoadoutApplication(CCSPlayerController player, List<string> normalizedLoadout)
