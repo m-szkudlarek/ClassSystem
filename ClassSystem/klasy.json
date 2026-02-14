@@ -14,8 +14,7 @@
     "name": "Newbie",
     "role": "Klasa domyślna",
     "loadout": [ "Glock" ],
-    "knife": "default",
-    "armor": 25,
+    "armor": true,
     "helmet": false,
     "skills": [],
     "stats": {
@@ -34,8 +33,7 @@
     "name": "Rambo",
     "role": "Heavy Assault / Close Combat",
     "loadout": [ "Negev" ],
-    "knife": "tactical",
-    "armor": 100,
+    "armor": true,
     "helmet": true,
     "skills": [],
     "stats": {
@@ -54,8 +52,7 @@
     "name": "John Wick",
     "role": "Precision DPS",
     "loadout": [ "USP-S", "P90" ],
-    "knife": "karambit",
-    "armor": 75,
+    "armor": true,
     "helmet": true,
     "skills": [],
     "stats": {
@@ -74,8 +71,7 @@
     "name": "Neo",
     "role": "Mobility / Dodge",
     "loadout": [ "DualBerettas" ],
-    "knife": "butterfly",
-    "armor": 50,
+    "armor": true,
     "helmet": false,
     "skills": [],
     "stats": {
@@ -94,8 +90,7 @@
     "name": "Joker",
     "role": "Area Damage",
     "loadout": [ "Nova" ],
-    "knife": "survivalbowie",
-    "armor": 80,
+    "armor": true,
     "helmet": true,
     "skills": [],
     "stats": {
@@ -114,8 +109,7 @@
     "name": "Terminator",
     "role": "Frontline Tank",
     "loadout": [ "M249", "FiveSeven" ],
-    "knife": "m9bayonet",
-    "armor": 100,
+    "armor": true,
     "helmet": true,
     "skills": [],
     "stats": {
@@ -134,8 +128,7 @@
     "name": "Ghost",
     "role": "Long Range / Stealth",
     "loadout": [ "SSG08", "Glock" ],
-    "knife": "skeleton",
-    "armor": 50,
+    "armor": true,
     "helmet": true,
     "skills": [],
     "stats": {
@@ -154,8 +147,7 @@
     "name": "Desmond Doss",
     "role": "Support / Team Sustain",
     "loadout": [ "GalilAR" ],
-    "knife": "flip",
-    "armor": 60,
+    "armor": true,
     "helmet": true,
     "skills": [ "self_heal" ],
     "stats": {
@@ -176,8 +168,7 @@
     "role": "Premium Gunslinger",
     "access": "PREMIUM",
     "loadout": [ "Revolver" ],
-    "knife": "bayonet",
-    "armor": 85,
+    "armor": true,
     "helmet": true,
     "skills": [],
     "stats": {

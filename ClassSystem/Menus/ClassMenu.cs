@@ -13,35 +13,6 @@ namespace ClassSystem.Menus;
 public sealed class ClassMenu
 {
 
-    private static readonly Dictionary<string, ushort> KnifeDefinitions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["default"] = 42,
-        ["knife"] = 42,
-        ["weaponknife"] = 42,
-        ["karambit"] = 507,
-        ["knifekarambit"] = 507,
-        ["m9bayonet"] = 508,
-        ["knifem9bayonet"] = 508,
-        ["bayonet"] = 500,
-        ["flip"] = 505,
-        ["knifeflip"] = 505,
-        ["gut"] = 506,
-        ["knifegut"] = 506,
-        ["tactical"] = 509,
-        ["knifetactical"] = 509,
-        ["falchion"] = 512,
-        ["knifefalchion"] = 512,
-        ["survivalbowie"] = 514,
-        ["bowie"] = 514,
-        ["knifesurvivalbowie"] = 514,
-        ["butterfly"] = 515,
-        ["knifebutterfly"] = 515,
-        ["shadowdaggers"] = 516,
-        ["daggers"] = 516,
-        ["skeleton"] = 525,
-        ["knifeskeleton"] = 525
-    };
-
     private IMenuApi? _api;
     private ILogger? _logger;
 
@@ -225,30 +196,9 @@ public sealed class ClassMenu
             return;
         }
 
-        var knifeDef = ResolveKnifeDefinition(info);
-
-        _logger?.LogInformation("[FLOW-KNIFE] Class={ClassId}, KnifeConfig={KnifeConfig}, ResolvedDef={KnifeDef}", info.Id, info.Knife ?? "<null>", knifeDef?.ToString() ?? "<none>");
-
         ApplyStats(pawn, info.Stats);
         GiveLoadout(player, info.Loadout);
         GiveArmorAndHelmetItem(player, info);
-
-
-        if (knifeDef.HasValue)
-        {
-            _logger?.LogInformation("[FLOW-KNIFE] Scheduling knife apply for player={Player}, defIndex={DefIndex}", player.PlayerName, knifeDef.Value);
-            Server.NextFrame(() =>
-            {
-                Server.NextFrame(() =>
-                {
-                    TryApplyKnife(player, knifeDef.Value);
-                });
-            });
-        }
-        else
-        {
-            _logger?.LogInformation("[FLOW-KNIFE] Knife not applied for class={ClassId} (no valid mapping).", info.Id);
-        }
         //ApplySkills(player, info.Skills, announce);
 
         if (announce)
@@ -276,7 +226,7 @@ public sealed class ClassMenu
 
         var itemName = classInfo.Helmet
             ? "item_assaultsuit"
-            : classInfo.Armor > 0
+            : classInfo.Armor
                 ? "item_kevlar"
                 : string.Empty;
 
@@ -292,121 +242,6 @@ public sealed class ClassMenu
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "[DEBUG] Nie udało się nadać itemu pancerza/hełmu {Item} graczowi {Player}.", itemName, player.PlayerName);
-        }
-    }
-
-    private void TryApplyKnife(CCSPlayerController player, ushort defIndex)
-    {
-        if (player == null || !player.IsValid)
-        {
-            _logger?.LogWarning("[FLOW-KNIFE] TryApplyKnife aborted: invalid player.");
-            return;
-        }
-
-        TryApplyKnifeWithRetries(player, defIndex, 8);
-    }
-
-    private void TryApplyKnifeWithRetries(CCSPlayerController player, ushort defIndex, int attemptsRemaining)
-    {
-        if (player == null || !player.IsValid || attemptsRemaining <= 0)
-        {
-            _logger?.LogWarning("[FLOW-KNIFE] Knife apply aborted for player={Player}, attemptsRemaining={Attempts}.", player?.PlayerName ?? "<null>", attemptsRemaining);
-            return;
-        }
-
-        var pawn = player.PlayerPawn.Value;
-        if (pawn == null || !player.PlayerPawn.IsValid)
-        {
-            _logger?.LogWarning("[FLOW-KNIFE] TryApplyKnife aborted: invalid pawn for player={Player}.", player.PlayerName);
-            return;
-        }
-
-        var knife = FindPlayerKnife(player);
-        if (knife == null)
-        {
-            if (attemptsRemaining == 8)
-            {
-                _logger?.LogInformation("[FLOW-KNIFE] Giving base knife to player={Player} before applying defIndex={DefIndex}.", player.PlayerName, defIndex);
-                player.GiveNamedItem("weapon_knife");
-            }
-
-            Server.NextFrame(() => TryApplyKnifeWithRetries(player, defIndex, attemptsRemaining - 1));
-            return;
-        }
-
-        if (!TryApplyKnifeEcon(knife, player, defIndex))
-        {
-            Server.NextFrame(() => TryApplyKnifeWithRetries(player, defIndex, attemptsRemaining - 1));
-            return;
-        }
-
-        player.ExecuteClientCommandFromServer("slot3");
-        Server.NextFrame(() => player.ExecuteClientCommandFromServer("slot3"));
-    }
-
-    private CBasePlayerWeapon? FindPlayerKnife(CCSPlayerController player)
-    {
-        var pawn = player.PlayerPawn.Value;
-        if (pawn == null || !player.PlayerPawn.IsValid)
-        {
-            return null;
-        }
-
-        var weaponServices = pawn.WeaponServices?.As<CCSPlayer_WeaponServices>();
-        if (weaponServices == null)
-        {
-            return null;
-        }
-
-        foreach (var weaponHandle in weaponServices.MyWeapons)
-        {
-            var weapon = weaponHandle.Value;
-            if (weapon == null || !weapon.IsValid)
-            {
-                continue;
-            }
-
-            var weaponName = weapon.GetWeaponName();
-            if (weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(weaponName, "weapon_bayonet", StringComparison.OrdinalIgnoreCase))
-            {
-                return weapon;
-            }
-        }
-
-        return null;
-    }
-
-    private bool TryApplyKnifeEcon(CBasePlayerWeapon knife, CCSPlayerController player, ushort defIndex)
-    {
-        try
-        {
-            var econ = knife.As<CEconEntity>();
-            if (econ == null || !econ.IsValid)
-            {
-                return false;
-            }
-
-            var itemView = econ.AttributeManager.Item;
-            itemView.ItemDefinitionIndex = defIndex;
-
-            econ.FallbackPaintKit = 0;
-            econ.FallbackSeed = 0;
-            econ.FallbackWear = 0.0001f;
-
-            Utilities.SetStateChanged(knife, "CEconItemView", "m_iItemDefinitionIndex");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackPaintKit");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackSeed");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_flFallbackWear");
-            Utilities.SetStateChanged(knife, "CEconEntity", "m_AttributeManager");
-
-            _logger?.LogInformation("[FLOW-KNIFE] Applied ItemDefinitionIndex={DefIndex} to knife for player={Player}.", defIndex, player.PlayerName);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "[FLOW-KNIFE] Failed applying knife econ for player={Player}, defIndex={DefIndex}.", player.PlayerName, defIndex);
-            return false;
         }
     }
 
@@ -447,45 +282,6 @@ public sealed class ClassMenu
         }
 
         Server.NextFrame(() => StartLoadoutApplication(player, normalizedLoadout));
-    }
-
-    private ushort? ResolveKnifeDefinition(ClassDefinition info)
-    {
-        if (string.IsNullOrWhiteSpace(info.Knife))
-        {
-            return null;
-        }
-
-        if (TryParseKnifeDefinition(info.Knife, out var knifeDef))
-        {
-            _logger?.LogInformation("[FLOW-KNIFE] Resolved knife '{KnifeName}' -> defIndex={DefIndex} for class={ClassId}.", info.Knife, knifeDef, info.Id);
-            return knifeDef;
-        }
-
-        _logger?.LogWarning("[WARN] Klasa {ClassId} ma nieprawidłowy knife '{KnifeName}'.", info.Id, info.Knife);
-        return null;
-    }
-
-    private static bool TryParseKnifeDefinition(string knifeName, out ushort defIndex)
-    {
-        var lowered = knifeName.Trim().ToLowerInvariant();
-
-        if (KnifeDefinitions.TryGetValue(lowered, out defIndex))
-        {
-            return true;
-        }
-
-        if (lowered.StartsWith("weapon_", StringComparison.Ordinal))
-        {
-            lowered = lowered["weapon_".Length..];
-        }
-
-        if (KnifeDefinitions.TryGetValue(lowered, out defIndex))
-        {
-            return true;
-        }
-
-        return false;
     }
 
     private void StartLoadoutApplication(CCSPlayerController player, List<string> normalizedLoadout)
