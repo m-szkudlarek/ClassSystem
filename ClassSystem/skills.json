@@ -1,0 +1,8 @@
+[
+  {
+    "id": "self_heal",
+    "cooldown": 20,
+    "reuse": 1,
+    "power": 50
+  }
+]

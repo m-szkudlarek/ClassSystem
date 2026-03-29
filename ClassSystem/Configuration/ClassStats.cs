@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace ClassSystem;
+namespace ClassSystem.Configuration;
 
 public sealed class ClassStats
 {
